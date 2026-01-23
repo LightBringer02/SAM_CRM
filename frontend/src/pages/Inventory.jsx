@@ -24,7 +24,7 @@ export default function Inventory() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    axios.get("http://localhost:4000/api/inventory")
+    axios.get("/api/inventory")
       .then(res => {
         console.log("Inventory API response:", res);
         setData(res.data.data || []);
