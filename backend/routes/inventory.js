@@ -5,7 +5,6 @@ const { fetchInventory } = require('../connection/inventory');  // FIXED PATH
 router.get('/', async (req, res) => {
   try {
     const data = await fetchInventory();
-    console.log('Fetched inventory:', data); // Debug log
 
     const mapped = data.map((item, idx) => ({
       serial: idx + 1,

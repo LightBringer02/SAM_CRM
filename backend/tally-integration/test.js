@@ -49,6 +49,7 @@ async function testGetAllLedgers() {
   try {
     const result = await tally.getAllLedgers();
     console.log('✓ Ledgers retrieved successfully!');
+    console.log(result);
     return true;
   } catch (error) {
     console.error('✗ Get ledgers failed:', error.message);

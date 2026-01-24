@@ -172,48 +172,117 @@ async function parseInventoryXml(xml) {
       }
     }
 
-    // 7. MRP - Get most recent MRP
-    let rate = "";
+    // 7. MRP/RATE - Robust extraction with fallbacks and numeric cleaning
+    function extractNumeric(val) {
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string') {
+        const match = val.match(/([\d.]+)/);
+        return match ? Number(match[1]) : 0;
+      }
+      return 0;
+    }
+
+    let rate = 0;
+    // Try FULLMRP.LIST.RATE
     if (item["FULLMRP.LIST"]?.RATE) {
-      rate = item["FULLMRP.LIST"].RATE;
-    } else if (item["MRPDETAILS.LIST"]) {
-      // Try to get from MRPDETAILS if FULLMRP not available
+      rate = extractNumeric(item["FULLMRP.LIST"].RATE);
+    }
+    // Try MRPDETAILS.LIST.MRPRATEDETAILS.LIST.MRPRATE
+    if ((!rate || rate === 0) && item["MRPDETAILS.LIST"]) {
       const mrpDetail = Array.isArray(item["MRPDETAILS.LIST"]) 
         ? item["MRPDETAILS.LIST"][0] 
         : item["MRPDETAILS.LIST"];
-      
       if (mrpDetail?.["MRPRATEDETAILS.LIST"]?.MRPRATE) {
-        rate = mrpDetail["MRPRATEDETAILS.LIST"].MRPRATE;
+        rate = extractNumeric(mrpDetail["MRPRATEDETAILS.LIST"].MRPRATE);
       }
     }
+    // Try batch OPENINGRATE if still empty
+    if ((!rate || rate === 0) && item["BATCHALLOCATIONS.LIST"]) {
+      const batches = Array.isArray(item["BATCHALLOCATIONS.LIST"]) ? item["BATCHALLOCATIONS.LIST"] : [item["BATCHALLOCATIONS.LIST"]];
+      for (const b of batches) {
+        if (b.OPENINGRATE) {
+          const batchRate = extractNumeric(b.OPENINGRATE);
+          if (batchRate > 0) {
+            rate = batchRate;
+            break;
+          }
+        }
+      }
+    }
+    // Fallback to STANDARDSELLINGPRICE, STANDARDPRICE
+    if ((!rate || rate === 0) && item.STANDARDSELLINGPRICE) {
+      rate = extractNumeric(item.STANDARDSELLINGPRICE);
+    }
+    if ((!rate || rate === 0) && item.STANDARDPRICE) {
+      rate = extractNumeric(item.STANDARDPRICE);
+    }
+    // Fallback to OPENINGRATE (top-level)
+    if ((!rate || rate === 0) && item.OPENINGRATE) {
+      rate = extractNumeric(item.OPENINGRATE);
+    }
+    // Fallback to CLOSINGRATE (top-level)
+    if ((!rate || rate === 0) && item.CLOSINGRATE) {
+      rate = extractNumeric(item.CLOSINGRATE);
+    }
+    // Fallback to OPENINGVALUE/OPENINGBALANCE ratio
+    if ((!rate || rate === 0) && extractNumeric(item.OPENINGBALANCE) > 0 && extractNumeric(item.OPENINGVALUE) > 0) {
+      rate = extractNumeric(item.OPENINGVALUE) / extractNumeric(item.OPENINGBALANCE);
+    }
+    // Fallback to CLOSINGVALUE/CLOSINGBALANCE ratio
+    if ((!rate || rate === 0) && extractNumeric(item.CLOSINGBALANCE) > 0 && extractNumeric(item.CLOSINGVALUE) > 0) {
+      rate = extractNumeric(item.CLOSINGVALUE) / extractNumeric(item.CLOSINGBALANCE);
+    }
+    // 8. STOCK VALUES (ensure numbers, with batch and opening/closing fallback)
+    function extractQty(val) {
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string') {
+        // Remove units if present (e.g., '10 Nos')
+        const match = val.match(/([\d.]+)/);
+        return match ? Number(match[1]) : 0;
+      }
+      return 0;
+    }
 
-    // 8. STOCK VALUES
-    const closing_balance = item.CLOSINGBALANCE || 0;
-    const closing_value = item.CLOSINGVALUE || 0;
+    // Try closing balance, else batch closing, else opening, else 0
+    let closing_balance = extractQty(item.CLOSINGBALANCE);
+    if ((!closing_balance || closing_balance === 0) && item["BATCHALLOCATIONS.LIST"]) {
+      const batches = Array.isArray(item["BATCHALLOCATIONS.LIST"]) ? item["BATCHALLOCATIONS.LIST"] : [item["BATCHALLOCATIONS.LIST"]];
+      for (const b of batches) {
+        if (b.CLOSINGBALANCE) {
+          const batchQty = extractQty(b.CLOSINGBALANCE);
+          if (batchQty > 0) {
+            closing_balance = batchQty;
+            break;
+          }
+        }
+      }
+    }
+    if ((!closing_balance || closing_balance === 0) && item.OPENINGBALANCE) {
+      closing_balance = extractQty(item.OPENINGBALANCE);
+    }
 
-    const opening_balance = item.OPENINGBALANCE || 0;
-    const opening_value = item.OPENINGVALUE || 0;
-
-    const purchase_rate = item.STANDARDPRICE || 0;
-    const selling_rate = item.STANDARDSELLINGPRICE || 0;
-
-    // 9. BATCH DETAILS (if available)
+    const closing_value = extractNumeric(item.CLOSINGVALUE);
+    const opening_balance = extractQty(item.OPENINGBALANCE);
+    const opening_value = extractNumeric(item.OPENINGVALUE);
+    const purchase_rate = extractNumeric(item.STANDARDPRICE);
+    const selling_rate = extractNumeric(item.STANDARDSELLINGPRICE);
+    // 9. BATCH DETAILS (if available, with numeric extraction)
     let batch_info = [];
     if (item["BATCHALLOCATIONS.LIST"]) {
       const batches = Array.isArray(item["BATCHALLOCATIONS.LIST"])
         ? item["BATCHALLOCATIONS.LIST"]
         : [item["BATCHALLOCATIONS.LIST"]];
-      
       batch_info = batches.map(b => ({
         godown: b.GODOWNNAME || "Main Location",
         batch: b.BATCHNAME || "Primary Batch",
-        balance: b.OPENINGBALANCE || 0,
-        value: b.OPENINGVALUE || 0,
-        rate: b.OPENINGRATE || 0,
+        balance: extractQty(b.OPENINGBALANCE),
+        value: extractNumeric(b.OPENINGVALUE),
+        rate: extractNumeric(b.OPENINGRATE),
         mfg_date: b.MFDON || null
       }));
     }
-
+    // Stock status
+    const stock_status = closing_balance > 0 ? "In Stock" : "Out of Stock";
     inventory.push({
       name: primary_name,
       alias: alias_name,
@@ -224,17 +293,13 @@ async function parseInventoryXml(xml) {
       rate,
       unit,
       unit_conversion,
-
       quantity: closing_balance,
-      stock: closing_balance,
+      stock: stock_status,
       closing_value,
       opening_balance,
       opening_value,
-
       purchase_rate,
       selling_rate,
-      
-      // Additional useful fields
       batch_info: batch_info.length > 0 ? batch_info : null,
       guid: item.GUID || null,
     });

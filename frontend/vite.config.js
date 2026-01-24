@@ -10,12 +10,11 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api/inventory': {
+      '/api': {
         target: 'http://localhost:4000',
         changeOrigin: true,
         secure: false,
       },
-      // Add more proxies if needed
     },
   },
 })
