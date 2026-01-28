@@ -1,0 +1,19 @@
+{
+  "tallyUrl": "http://localhost:9000",
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "samcrm",
+    "user": "admin",
+    "password": "root"
+  },
+  "limits": {
+    "maxAdmins": 1,
+    "maxTotalUsers": 5
+  },
+  "backendMode": "LIVE",
+  "liveServerUrl": "https://probably-anniversary-andy-sword.trycloudflare.com  ",
+  "serviceEnabled": true,
+  "lastUpdated": "2026-01-28T15:22:43.377Z",
+  "updatedBy": "0"
+}

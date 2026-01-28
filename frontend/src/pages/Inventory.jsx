@@ -86,38 +86,38 @@ export default function Inventory() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Inventory</h1>
+    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+      <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Inventory</h1>
       <div className="flex flex-wrap gap-4 mb-4">
         <input
-          className="px-3 py-2 border rounded w-full max-w-xs"
+          className="px-3 py-2 border rounded w-full max-w-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
           placeholder="Search..."
           value={filter}
           onChange={e => setFilter(e.target.value)}
         />
         <input
-          className="px-3 py-2 border rounded w-32"
+          className="px-3 py-2 border rounded w-32 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
           type="number"
           placeholder="Min Price"
           value={minPrice}
           onChange={e => setMinPrice(e.target.value)}
         />
         <input
-          className="px-3 py-2 border rounded w-32"
+          className="px-3 py-2 border rounded w-32 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
           type="number"
           placeholder="Max Price"
           value={maxPrice}
           onChange={e => setMaxPrice(e.target.value)}
         />
         <input
-          className="px-3 py-2 border rounded w-32"
+          className="px-3 py-2 border rounded w-32 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
           type="number"
           placeholder="Min Qty"
           value={minQty}
           onChange={e => setMinQty(e.target.value)}
         />
         <input
-          className="px-3 py-2 border rounded w-32"
+          className="px-3 py-2 border rounded w-32 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
           type="number"
           placeholder="Max Qty"
           value={maxQty}
@@ -127,10 +127,10 @@ export default function Inventory() {
 
       {/* Create Item and Add by CSV buttons side by side below filters */}
       <div className="mb-6 flex gap-3">
-        <button className="px-3 py-2 bg-green-600 text-white rounded text-base" onClick={() => setShowCreate(true)}>
+        <button className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-base transition" onClick={() => setShowCreate(true)}>
           Create Item
         </button>
-        <button className="px-3 py-2 bg-blue-700 text-white rounded text-base" onClick={() => setShowCSV(true)}>
+        <button className="px-3 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded text-base transition" onClick={() => setShowCSV(true)}>
           Add by CSV
         </button>
       </div>
@@ -195,23 +195,23 @@ export default function Inventory() {
                 </div>
               </div>
             )}
-      {loading && <div className="mb-4 text-blue-600">Loading inventory...</div>}
-      {error && <div className="mb-4 text-red-600">{error}</div>}
-      <div className="overflow-x-auto">
+      {loading && <div className="mb-4 text-blue-600 dark:text-blue-400">Loading inventory...</div>}
+      {error && <div className="mb-4 text-red-600 dark:text-red-400">{error}</div>}
+      <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
         {filtered.length === 0 && !loading && !error ? (
-          <div className="text-center text-gray-500 py-8">No inventory found.</div>
+          <div className="text-center text-gray-500 dark:text-gray-400 py-8">No inventory found.</div>
         ) : (
-          <table className="min-w-full border border-gray-200 rounded-lg">
+          <table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">
             <thead>
               <tr>
                 {columns.map(col => (
-                  <th key={col.key} className="px-4 py-2 border-b bg-gray-100 text-left text-sm font-semibold">{col.label}</th>
+                  <th key={col.key} className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">{col.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((item, idx) => (
-                <tr key={idx} className={idx % 2 ? "bg-gray-50" : "bg-white"}>
+                <tr key={idx} className={idx % 2 ? "bg-gray-50 dark:bg-gray-800" : "bg-white dark:bg-gray-900"}>
                   {columns.map(col => {
                     let value = col.key === 'serial' ? idx + 1 : item[col.key];
                     // For rate and quantity, show empty if 0 or invalid
@@ -227,7 +227,7 @@ export default function Inventory() {
                       value = Number(value);
                     }
                     return (
-                      <td key={col.key} className="px-4 py-2 border-b text-sm">{value}</td>
+                      <td key={col.key} className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100">{value}</td>
                     );
                   })}
                 </tr>
@@ -238,51 +238,51 @@ export default function Inventory() {
       </div>
       {/* Create Item Modal */}
       {showCreate && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 transition-all" style={{ background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)' }}>
-          <form className="bg-white bg-opacity-100 p-8 rounded shadow-lg min-w-[600px] max-w-[90vw]" onSubmit={handleCreateSubmit}>
-            <h2 className="text-lg font-bold mb-4">Create Inventory Item</h2>
+        <div className="fixed inset-0 flex items-center justify-center z-50 transition-all" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}>
+          <form className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl min-w-[600px] max-w-[90vw] border dark:border-gray-700" onSubmit={handleCreateSubmit}>
+            <h2 className="text-lg font-bold mb-4 text-gray-900 dark:text-white">Create Inventory Item</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="mb-2">
-                <label className="block text-sm font-medium">Name *</label>
-                <input name="name" value={newItem.name} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" required />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name *</label>
+                <input name="name" value={newItem.name} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" required />
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-medium">Alias</label>
-                <input name="alias" value={newItem.alias} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Alias</label>
+                <input name="alias" value={newItem.alias} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-medium">Group</label>
-                <input name="group" value={newItem.group} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Group</label>
+                <input name="group" value={newItem.group} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-medium">Category</label>
-                <input name="category" value={newItem.category} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                <input name="category" value={newItem.category} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-medium">HSN</label>
-                <input name="hsn" value={newItem.hsn} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">HSN</label>
+                <input name="hsn" value={newItem.hsn} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-medium">GST</label>
-                <input name="gst" value={newItem.gst} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">GST</label>
+                <input name="gst" value={newItem.gst} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-medium">Rate *</label>
-                <input name="rate" value={newItem.rate} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" required type="number" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Rate *</label>
+                <input name="rate" value={newItem.rate} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" required type="number" />
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-medium">Quantity *</label>
-                <input name="quantity" value={newItem.quantity} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" required type="number" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity *</label>
+                <input name="quantity" value={newItem.quantity} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" required type="number" />
               </div>
               <div className="mb-2 col-span-2">
-                <label className="block text-sm font-medium">Unit *</label>
-                <input name="unit" value={newItem.unit} onChange={handleCreateChange} className="w-full border px-2 py-1 rounded" required />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Unit *</label>
+                <input name="unit" value={newItem.unit} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" required />
               </div>
             </div>
-            {createError && <div className="text-red-600 mb-2">{createError}</div>}
+            {createError && <div className="text-red-600 dark:text-red-400 mb-2">{createError}</div>}
             <div className="flex gap-2 mt-4">
-              <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded">Create</button>
-              <button type="button" className="px-4 py-2 bg-gray-400 text-white rounded" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button type="submit" className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition">Create</button>
+              <button type="button" className="px-4 py-2 bg-gray-400 hover:bg-gray-500 dark:bg-gray-600 dark:hover:bg-gray-500 text-white rounded transition" onClick={() => setShowCreate(false)}>Cancel</button>
             </div>
           </form>
         </div>

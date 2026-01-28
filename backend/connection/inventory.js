@@ -1,7 +1,11 @@
 const axios = require('axios');
 const xml2js = require('xml2js');
+const { getTallyUrl } = require('../config/systemConfig');
 
-const TALLY_URL = process.env.TALLY_URL || 'http://localhost:9000';
+// Get Tally URL from system config (dynamic)
+function getActiveTallyUrl() {
+  return getTallyUrl() || process.env.TALLY_URL || 'http://localhost:9000';
+}
 
 const INVENTORY_XML = `
 <ENVELOPE>
@@ -48,6 +52,7 @@ function cleanTallyXml(xml) {
 }
 
 async function fetchInventoryXML() {
+  const TALLY_URL = getActiveTallyUrl();
   const { data } = await axios.post(TALLY_URL, INVENTORY_XML, {
     headers: { "Content-Type": "text/xml" },
     timeout: 15000,

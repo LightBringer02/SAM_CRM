@@ -1,0 +1,91 @@
+# =====================================================
+# Git Ignore - Security Critical
+# Prevents sensitive files from being committed
+# =====================================================
+
+# ========== Environment & Secrets ==========
+.env
+.env.local
+.env.*.local
+*.env
+.secrets
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# ========== Logs ==========
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========== Dependencies ==========
+node_modules/
+bower_components/
+
+# ========== Build Output ==========
+dist/
+build/
+.next/
+out/
+
+# ========== IDE & Editor ==========
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========== Database ==========
+*.sql.bak
+*.dump
+*.sqlite
+*.db
+
+# ========== Backups ==========
+backups/
+*.bak
+*.backup
+
+# ========== Config Files (Sensitive) ==========
+config/local.json
+config/production.json
+system-config.json
+
+# ========== Test & Coverage ==========
+coverage/
+.nyc_output/
+*.lcov
+
+# ========== Cache ==========
+.cache/
+.parcel-cache/
+.npm/
+.eslintcache
+
+# ========== Temporary Files ==========
+tmp/
+temp/
+*.tmp
+
+# ========== Source Maps (Production) ==========
+*.map
+
+# ========== OS Generated ==========
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# ========== Security Scan Results ==========
+security-scan-results/
+*.sarif

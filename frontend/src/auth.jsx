@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from "react";
 
 const AuthContext = createContext();
 
-const PREDEFINED_ROLES = ["admin", "user", "manager", "staff"];
+const PREDEFINED_ROLES = ["root", "admin", "user", "manager", "staff"];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -13,9 +13,17 @@ export function AuthProvider({ children }) {
     // Initialize users from localStorage
     let storedUsers = JSON.parse(localStorage.getItem("users") || "[]");
     
-    // Create demo admin user if no users exist
+    // Create demo admin user and root user if no users exist
     if (storedUsers.length === 0) {
       storedUsers = [
+        {
+          id: 0,
+          username: "Root",
+          email: "root@crm.com",
+          password: "Root@12345",
+          role: "root",
+          createdAt: new Date().toLocaleDateString(),
+        },
         {
           id: 1,
           username: "Admin",
@@ -26,6 +34,20 @@ export function AuthProvider({ children }) {
         },
       ];
       localStorage.setItem("users", JSON.stringify(storedUsers));
+    } else {
+      // Ensure root user exists in existing installations
+      const hasRoot = storedUsers.some(u => u.role === "root");
+      if (!hasRoot) {
+        storedUsers.unshift({
+          id: 0,
+          username: "Root",
+          email: "root@crm.com",
+          password: "Root@12345",
+          role: "root",
+          createdAt: new Date().toLocaleDateString(),
+        });
+        localStorage.setItem("users", JSON.stringify(storedUsers));
+      }
     }
     
     setUsers(storedUsers);
@@ -113,6 +135,27 @@ export function AuthProvider({ children }) {
     localStorage.setItem("users", JSON.stringify(updatedUsers));
   };
 
+  // Helper to check if user is root
+  const isRoot = () => {
+    return user?.role?.toLowerCase() === 'root';
+  };
+
+  // Helper to check if user is admin or higher (admin or root)
+  const isAdminOrHigher = () => {
+    const role = user?.role?.toLowerCase();
+    return role === 'admin' || role === 'root';
+  };
+
+  // Helper to get headers for API calls with user info
+  const getAuthHeaders = () => {
+    if (!user) return {};
+    return {
+      'x-user-id': String(user.id),
+      'x-user-role': user.role,
+      'x-username': user.username || user.email
+    };
+  };
+
   const value = {
     user,
     currentUser: user,
@@ -124,6 +167,9 @@ export function AuthProvider({ children }) {
     updateUser,
     deleteUser,
     roles: PREDEFINED_ROLES,
+    isRoot,
+    isAdminOrHigher,
+    getAuthHeaders,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

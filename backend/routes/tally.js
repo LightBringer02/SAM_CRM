@@ -2,12 +2,16 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { fetchInventory } = require('../connection/inventory');
+const { getTallyUrl, isDummyMode } = require('../config/systemConfig');
 
 // Global sync state
 let lastSynced = null;
 let tallyConnected = false;
 
-const TALLY_URL = process.env.TALLY_URL || 'http://localhost:9000';
+// Get Tally URL from system config (dynamic)
+function getActiveTallyUrl() {
+  return getTallyUrl() || process.env.TALLY_URL || 'http://localhost:9000';
+}
 
 // Minimal Tally health-check XML (TDL collection)
 const TALLY_PING_XML = `
@@ -38,7 +42,14 @@ const TALLY_PING_XML = `
 
 // Helper function to check connection
 async function pingTally() {
+  // In dummy mode, always report as connected
+  if (isDummyMode()) {
+    tallyConnected = true;
+    return true;
+  }
+
   try {
+    const TALLY_URL = getActiveTallyUrl();
     const { data } = await axios.post(TALLY_URL, TALLY_PING_XML, {
       headers: { 'Content-Type': 'text/xml' },
       timeout: 4000,

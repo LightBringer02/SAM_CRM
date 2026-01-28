@@ -557,7 +557,18 @@ class TallyConnector {
 }
 
 // --- Inventory Import Functions (from connection/inventory.js) ---
-const TALLY_URL = process.env.TALLY_URL || 'http://localhost:9000';
+
+// Try to import system config, fall back to env variable
+let getTallyUrl;
+try {
+  getTallyUrl = require('../config/systemConfig').getTallyUrl;
+} catch (e) {
+  getTallyUrl = () => null;
+}
+
+function getActiveTallyUrl() {
+  return (getTallyUrl && getTallyUrl()) || process.env.TALLY_URL || 'http://localhost:9000';
+}
 
 const INVENTORY_XML = `
 <ENVELOPE>
@@ -604,6 +615,7 @@ function cleanTallyXml(xml) {
 }
 
 async function fetchInventoryXML() {
+  const TALLY_URL = getActiveTallyUrl();
   const { data } = await axios.post(TALLY_URL, INVENTORY_XML, {
     headers: { "Content-Type": "text/xml" },
     timeout: 15000,

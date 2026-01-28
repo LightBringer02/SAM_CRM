@@ -6,7 +6,8 @@ import MainLayout from "../layouts/MainLayout";
 import Dashboard from "../pages/Dashboard";
 import Inventory from "../pages/Inventory";
 import Vouchers from "../pages/Vouchers";
-import Vendors from "../pages/Vendors";
+import Ledgers from "../pages/Ledgers";
+import Communication from "../pages/Communication";
 import Orders from "../pages/Orders";
 import Users from "../pages/Users";
 import Employees from "../pages/Employees";
@@ -17,6 +18,10 @@ import Profile from "../pages/Profile";
 import Settings from "../pages/Settings";
 import Login from "../pages/Login";
 import ChangePasswordOnFirstLogin from "../pages/ChangePasswordOnFirstLogin";
+import SystemConfig from "../pages/SystemConfig";
+import QueueManagement from "../pages/QueueManagement";
+import BackupManagement from "../pages/BackupManagement";
+import ApiConfiguration from "../pages/ApiConfiguration";
 
 // Protected Route Wrapper
 function ProtectedLayout({ children }) {
@@ -101,10 +106,26 @@ export default function AppRouter() {
           }
         />
         <Route
-          path="/vendors"
+          path="/ledgers"
           element={
             <ProtectedLayout>
-              <Vendors />
+              <Ledgers />
+            </ProtectedLayout>
+          }
+        />
+        <Route
+          path="/ledgers/:group"
+          element={
+            <ProtectedLayout>
+              <Ledgers />
+            </ProtectedLayout>
+          }
+        />
+        <Route
+          path="/communication"
+          element={
+            <ProtectedLayout>
+              <Communication />
             </ProtectedLayout>
           }
         />
@@ -169,6 +190,42 @@ export default function AppRouter() {
           element={
             <ProtectedLayout>
               <Settings />
+            </ProtectedLayout>
+          }
+        />
+        {/* ROOT-only System Configuration Route */}
+        <Route
+          path="/system-config"
+          element={
+            <ProtectedLayout>
+              <SystemConfig />
+            </ProtectedLayout>
+          }
+        />
+        {/* ROOT-only Queue Management Route */}
+        <Route
+          path="/queue"
+          element={
+            <ProtectedLayout>
+              <QueueManagement />
+            </ProtectedLayout>
+          }
+        />
+        {/* ROOT-only Backup Management Route */}
+        <Route
+          path="/backup"
+          element={
+            <ProtectedLayout>
+              <BackupManagement />
+            </ProtectedLayout>
+          }
+        />
+        {/* ROOT-only API Configuration Route */}
+        <Route
+          path="/api-config"
+          element={
+            <ProtectedLayout>
+              <ApiConfiguration />
             </ProtectedLayout>
           }
         />

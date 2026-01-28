@@ -1,0 +1,23 @@
+/* PDF-safe color overrides: force all colors to rgb/hex for html2canvas/pdf export */
+:root, [class*="bg-"], [class*="text-"], [class*="border-"] {
+  --tw-bg-opacity: 1 !important;
+  --tw-text-opacity: 1 !important;
+  --tw-border-opacity: 1 !important;
+  color-scheme: light;
+}
+
+body, .bg-white, .bg-gray-50, .bg-gray-100, .bg-gray-200, .bg-gray-300, .bg-blue-50, .bg-blue-100, .bg-green-100, .bg-orange-100, .bg-red-100, .bg-red-200, .bg-red-300, .bg-red-500 {
+  background-color: #fff !important;
+}
+
+.text-blue-900, .text-blue-800, .text-blue-700, .text-green-800, .text-orange-700, .text-red-800, .text-white {
+  color: #222 !important;
+}
+
+.bg-blue-600, .bg-green-600, .bg-gray-600, .bg-blue-700, .bg-blue-300, .bg-orange-100, .bg-red-500 {
+  background-color: #1976d2 !important;
+}
+
+.border-gray-200, .border-gray-300, .border-gray-400, .border-blue-600, .border-blue-300, .border-gray-100 {
+  border-color: #ccc !important;
+}

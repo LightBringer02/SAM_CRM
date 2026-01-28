@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../auth.jsx";
 import { validatePassword } from "../utils/passwordValidator.js";
-import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, User, Mail, Phone, Edit2 } from "lucide-react";
+import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, User, Mail, Phone, Edit2, Camera, X, Upload } from "lucide-react";
 
 export default function Settings() {
   const { user, logout, updateUser } = useAuth();
@@ -26,6 +26,61 @@ export default function Settings() {
   const [successMessage, setSuccessMessage] = useState("");
   const [detailsSuccessMessage, setDetailsSuccessMessage] = useState("");
   const [editingDetails, setEditingDetails] = useState(false);
+  
+  // Profile Image State
+  const [profileImage, setProfileImage] = useState(() => {
+    const saved = localStorage.getItem(`profile_image_${user?.id}`);
+    return saved || null;
+  });
+  const [imageLoading, setImageLoading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Handle profile image upload
+  const handleImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image size must be less than 2MB');
+      return;
+    }
+
+    setImageLoading(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result;
+      setProfileImage(base64);
+      localStorage.setItem(`profile_image_${user?.id}`, base64);
+      setImageLoading(false);
+    };
+    reader.onerror = () => {
+      alert('Failed to read image file');
+      setImageLoading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Remove profile image
+  const handleRemoveImage = () => {
+    setProfileImage(null);
+    localStorage.removeItem(`profile_image_${user?.id}`);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Get initials for avatar
+  const getInitials = () => {
+    const name = user?.name || user?.username || "U";
+    return name.charAt(0).toUpperCase();
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -241,6 +296,64 @@ export default function Settings() {
                 Edit
               </button>
             )}
+          </div>
+
+          {/* Profile Image Section */}
+          <div className="mb-6 flex flex-col items-center">
+            <div className="relative group">
+              {/* Profile Image or Initials */}
+              <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-lg">
+                {imageLoading ? (
+                  <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full"></div>
+                ) : profileImage ? (
+                  <img 
+                    src={profileImage} 
+                    alt="Profile" 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-3xl font-bold text-white">{getInitials()}</span>
+                )}
+              </div>
+              
+              {/* Camera Overlay */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute inset-0 w-24 h-24 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                <Camera className="w-6 h-6 text-white" />
+              </button>
+              
+              {/* Remove Button */}
+              {profileImage && (
+                <button
+                  onClick={handleRemoveImage}
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition"
+                  title="Remove photo"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            
+            {/* Hidden File Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImageUpload}
+              accept="image/*"
+              className="hidden"
+            />
+            
+            {/* Upload Button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-3 flex items-center gap-2 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition"
+            >
+              <Upload className="w-4 h-4" />
+              {profileImage ? "Change Photo" : "Upload Photo"}
+            </button>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Max 2MB, JPG/PNG</p>
           </div>
 
           {/* Success Message */}
@@ -547,7 +660,7 @@ export default function Settings() {
             )}
 
             {errors.newPassword && (
-              <p className="text-red-600 dark:text-red-400 text-xs mt-1">
+              <p className="text-red-600 text-sm mt-2">
                 {errors.newPassword}
               </p>
             )}
@@ -555,38 +668,38 @@ export default function Settings() {
 
           {/* Confirm Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-lg font-semibold text-gray-700 mb-3">
               Confirm New Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <Lock className="absolute left-4 top-4 w-6 h-6 text-gray-400" />
               <input
                 type={showConfirmPassword ? "text" : "password"}
                 name="confirmPassword"
                 value={formData.confirmPassword}
                 onChange={handleInputChange}
                 maxLength="16"
-                className={`w-full pl-10 pr-10 py-2 border rounded-lg bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition ${
+                className={`w-full pl-14 pr-14 py-3 border rounded-xl bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg transition ${
                   errors.confirmPassword
                     ? "border-red-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-gray-300"
                 }`}
                 placeholder="Confirm new password"
               />
               <button
                 type="button"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute right-3 top-3 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
               >
                 {showConfirmPassword ? (
-                  <EyeOff className="w-5 h-5" />
+                  <EyeOff className="w-6 h-6" />
                 ) : (
-                  <Eye className="w-5 h-5" />
+                  <Eye className="w-6 h-6" />
                 )}
               </button>
             </div>
             {errors.confirmPassword && (
-              <p className="text-red-600 dark:text-red-400 text-xs mt-1">
+              <p className="text-red-600 text-sm mt-2">
                 {errors.confirmPassword}
               </p>
             )}
@@ -602,7 +715,7 @@ export default function Settings() {
               !formData.newPassword ||
               !formData.confirmPassword
             }
-            className="w-full py-2 px-4 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-semibold rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+            className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed mt-8"
           >
             {loading ? "Changing Password..." : "Change Password"}
           </button>
@@ -610,11 +723,11 @@ export default function Settings() {
       </div>
 
       {/* Additional Info */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-6">
-        <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">
+      <div className="bg-blue-50 rounded-xl border border-blue-200 p-8 mt-10">
+        <h3 className="font-bold text-blue-900 text-xl mb-4">
           Password Security Tips
         </h3>
-        <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1">
+        <ul className="text-lg text-blue-800 space-y-2">
           <li>• Use a strong password with at least 8 characters</li>
           <li>• Include uppercase and lowercase letters</li>
           <li>• Add numbers and special characters for better security</li>

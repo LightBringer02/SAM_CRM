@@ -2,11 +2,15 @@ const { fetchInventory } = require('../connection/inventory');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { getTallyUrl, isDummyMode } = require('../config/systemConfig');
 
 const INVENTORY_PATH = path.join(__dirname, '../connection/inventory_cache.json');
 const SYNC_STATUS_PATH = path.join(__dirname, '../connection/sync_status.json');
 
-const TALLY_URL = process.env.TALLY_URL || 'http://localhost:9000';
+// Get Tally URL from system config (dynamic)
+function getActiveTallyUrl() {
+  return getTallyUrl() || process.env.TALLY_URL || 'http://localhost:9000';
+}
 
 let queue = [];
 let isSyncing = false;
@@ -45,7 +49,14 @@ const TALLY_PING_XML = `
 // HEALTH CHECK FUNCTION
 // ----------------------------
 async function pingTally() {
+  // In dummy mode, always report as connected
+  if (isDummyMode()) {
+    lastStatus.connected = true;
+    return true;
+  }
+
   try {
+    const TALLY_URL = getActiveTallyUrl();
     const { data } = await axios.post(TALLY_URL, TALLY_PING_XML, {
       headers: { 'Content-Type': 'text/xml' },
       timeout: 3000

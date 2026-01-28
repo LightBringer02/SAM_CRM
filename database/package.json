@@ -1,0 +1,23 @@
+{
+  "name": "crm-database",
+  "version": "1.0.0",
+  "description": "CRM Database Module - Queue, Backup, Fetch, and Sync services",
+  "main": "index.js",
+  "scripts": {
+    "init": "node -e \"require('./index').initialize({ runMigrations: true, startWorker: false })\"",
+    "worker": "node -e \"require('./index').initialize({ runMigrations: false, startWorker: true })\""
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^5.2.1",
+    "pg": "^8.11.0",
+    "uuid": "^9.0.0"
+  },
+  "keywords": [
+    "crm",
+    "database",
+    "queue",
+    "backup",
+    "postgresql"
+  ]
+}

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../auth";
-import { Eye, EyeOff, Plus, Trash2, Copy, Settings, RotateCcw } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, Copy, Settings, RotateCcw, Shield } from "lucide-react";
 
 export default function Users() {
-  const { users, currentUser, deleteUser } = useAuth();
+  const { users, currentUser, deleteUser, isRoot, isAdminOrHigher } = useAuth();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTempPasswordSettings, setShowTempPasswordSettings] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -24,8 +24,8 @@ export default function Users() {
     }
   }, []);
 
-  // Access control
-  if (currentUser?.role !== "admin") {
+  // Access control - allow admin and root
+  if (!isAdminOrHigher()) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
@@ -93,7 +93,13 @@ export default function Users() {
       return;
     }
 
-    if (user.role === "admin") {
+    // ROOT users cannot be modified by admins
+    if (user.role === "root" && !isRoot()) {
+      alert("Cannot reset ROOT user password");
+      return;
+    }
+
+    if (user.role === "admin" && !isRoot()) {
       alert("Cannot reset admin password");
       return;
     }
@@ -115,6 +121,21 @@ export default function Users() {
       alert("You cannot delete your own account");
       return;
     }
+
+    const targetUser = users.find((u) => u.id === userId);
+    
+    // ROOT users cannot be deleted by admins
+    if (targetUser?.role === "root" && !isRoot()) {
+      alert("Cannot delete ROOT user");
+      return;
+    }
+
+    // Admins cannot delete other admins unless they are ROOT
+    if (targetUser?.role === "admin" && !isRoot()) {
+      alert("Cannot delete admin user");
+      return;
+    }
+
     if (window.confirm("Are you sure you want to delete this user?")) {
       deleteUser(userId);
     }
