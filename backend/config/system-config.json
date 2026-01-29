@@ -4,7 +4,7 @@
     "host": "localhost",
     "port": 5432,
     "name": "samcrm",
-    "user": "admin",
+    "user": "postgres",
     "password": "root"
   },
   "limits": {
@@ -12,8 +12,8 @@
     "maxTotalUsers": 5
   },
   "backendMode": "LIVE",
-  "liveServerUrl": "https://probably-anniversary-andy-sword.trycloudflare.com  ",
+  "liveServerUrl": "https://bulletin-personally-salmon-adoption.trycloudflare.com/",
   "serviceEnabled": true,
-  "lastUpdated": "2026-01-28T15:22:43.377Z",
+  "lastUpdated": "2026-01-29T06:40:14.490Z",
   "updatedBy": "0"
 }

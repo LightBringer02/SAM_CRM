@@ -100,12 +100,32 @@ function saveConfig(config) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2), 'utf8');
+    
+    // Write to a temp file first, then rename (atomic write)
+    const tempPath = CONFIG_FILE_PATH + '.tmp';
+    fs.writeFileSync(tempPath, JSON.stringify(config, null, 2), 'utf8');
+    
+    // Rename temp file to actual file (atomic on most systems)
+    fs.renameSync(tempPath, CONFIG_FILE_PATH);
+    
     configCache = config;
+    console.log('System config saved successfully');
     return true;
   } catch (err) {
-    console.error('Error saving system config:', err);
-    return false;
+    console.error('Error saving system config:', err.message);
+    console.error('Config path:', CONFIG_FILE_PATH);
+    console.error('Full error:', err);
+    
+    // Try direct write as fallback
+    try {
+      fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2), 'utf8');
+      configCache = config;
+      console.log('System config saved (fallback method)');
+      return true;
+    } catch (fallbackErr) {
+      console.error('Fallback save also failed:', fallbackErr.message);
+      return false;
+    }
   }
 }
 

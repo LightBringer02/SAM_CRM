@@ -132,15 +132,22 @@ export default function SystemConfig() {
           database: { ...prev.database, ...(response.data.data.database || {}) },
           limits: { ...prev.limits, ...(response.data.data.limits || {}) }
         }));
+        
+        // Configuration saved successfully
         setMessage({ type: "success", text: "Configuration saved successfully!" });
 
-        // If database config changed, reload backend pool
-        try {
-          await axios.post(`${API_BASE_URL}/api/database/reload`, {}, {
-            headers: getAuthHeaders()
-          });
-        } catch (reloadErr) {
-          setMessage({ type: "warning", text: "Config saved, but failed to reload database pool: " + (reloadErr.response?.data?.error || reloadErr.message) });
+        // Only try to reload database pool if we're in LOCAL mode or database config changed
+        // In LIVE/cloud mode, database reload may not be available from frontend
+        if (cleanConfig.backendMode === 'LOCAL') {
+          try {
+            await axios.post(`${API_BASE_URL}/api/database/reload`, {}, {
+              headers: getAuthHeaders(),
+              timeout: 5000 // 5 second timeout
+            });
+          } catch (reloadErr) {
+            // Silently ignore reload errors - config is already saved
+            console.log("Database pool reload skipped:", reloadErr.message);
+          }
         }
       }
     } catch (err) {

@@ -481,19 +481,25 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
   // Calculate totals - correct accounting logic using filtered vouchers
   // For Debtors: Sales = Debit, Receipt = Credit
   // For Creditors: Purchase = Credit, Payment = Debit
+  // Use totalAmount (with GST) if available, otherwise fall back to amount
+  const getVoucherAmount = (v) => {
+    // Priority: totalAmount > ledger_total > grand_total > amount
+    return parseFloat(v.totalAmount) || parseFloat(v.ledger_total) || parseFloat(v.grand_total) || parseFloat(v.amount) || 0;
+  };
+
   const debitTotal = filteredVouchers
     .filter(v => {
       const type = (v.voucher_type || '').toLowerCase();
       return type === 'sales' || type === 'payment';
     })
-    .reduce((sum, v) => sum + (parseFloat(v.amount) || 0), 0);
+    .reduce((sum, v) => sum + getVoucherAmount(v), 0);
   
   const creditTotal = filteredVouchers
     .filter(v => {
       const type = (v.voucher_type || '').toLowerCase();
       return type === 'purchase' || type === 'receipt';
     })
-    .reduce((sum, v) => sum + (parseFloat(v.amount) || 0), 0);
+    .reduce((sum, v) => sum + getVoucherAmount(v), 0);
 
   return (
     <div 
@@ -735,10 +741,10 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
                             </td>
                             <td className="px-3 py-2 text-gray-900 dark:text-white">{v.voucher_number || '-'}</td>
                             <td className="px-3 py-2 text-right text-green-600 dark:text-green-400">
-                              {isDebit ? formatCurrency(v.amount) : '-'}
+                              {isDebit ? formatCurrency(getVoucherAmount(v)) : '-'}
                             </td>
                             <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">
-                              {!isDebit ? formatCurrency(v.amount) : '-'}
+                              {!isDebit ? formatCurrency(getVoucherAmount(v)) : '-'}
                             </td>
                           </tr>
                         );

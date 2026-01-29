@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem("users", JSON.stringify(storedUsers));
     } else {
       // Ensure root user exists in existing installations
-      const hasRoot = storedUsers.some(u => u.role === "root");
+      const hasRoot = storedUsers.some(u => u.role?.toLowerCase() === "root");
       if (!hasRoot) {
         storedUsers.unshift({
           id: 0,
@@ -46,6 +46,21 @@ export function AuthProvider({ children }) {
           role: "root",
           createdAt: new Date().toLocaleDateString(),
         });
+      }
+      
+      // Normalize all roles and emails to lowercase for consistency
+      let needsUpdate = false;
+      storedUsers = storedUsers.map(u => {
+        const normalizedRole = u.role?.toLowerCase();
+        const normalizedEmail = u.email?.toLowerCase();
+        if (u.role !== normalizedRole || u.email !== normalizedEmail) {
+          needsUpdate = true;
+          return { ...u, role: normalizedRole, email: normalizedEmail };
+        }
+        return u;
+      });
+      
+      if (needsUpdate || !hasRoot) {
         localStorage.setItem("users", JSON.stringify(storedUsers));
       }
     }
@@ -56,7 +71,13 @@ export function AuthProvider({ children }) {
     const savedUser = localStorage.getItem("currentUser");
     if (savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        const parsedUser = JSON.parse(savedUser);
+        // Normalize role to lowercase for consistency
+        if (parsedUser.role) {
+          parsedUser.role = parsedUser.role.toLowerCase();
+        }
+        setUser(parsedUser);
+        localStorage.setItem("currentUser", JSON.stringify(parsedUser));
       } catch {
         localStorage.removeItem("currentUser");
       }
@@ -66,8 +87,9 @@ export function AuthProvider({ children }) {
 
   const login = (emailOrUsername, password) => {
     const users = JSON.parse(localStorage.getItem("users") || "[]");
+    const normalizedInput = emailOrUsername.toLowerCase().trim();
     const foundUser = users.find(
-      (u) => (u.email === emailOrUsername || u.username === emailOrUsername) && u.password === password
+      (u) => (u.email?.toLowerCase() === normalizedInput || u.username?.toLowerCase() === normalizedInput) && u.password === password
     );
 
     if (foundUser) {
@@ -83,17 +105,18 @@ export function AuthProvider({ children }) {
 
   const signup = (email, username, password, role) => {
     const users = JSON.parse(localStorage.getItem("users") || "[]");
+    const normalizedEmail = email.toLowerCase().trim();
 
-    if (users.find((u) => u.email === email)) {
+    if (users.find((u) => u.email?.toLowerCase() === normalizedEmail)) {
       return { success: false, error: "Email already exists" };
     }
 
     const newUser = {
       id: Date.now(),
-      email,
+      email: email.toLowerCase().trim(),
       username,
       password,
-      role,
+      role: role.toLowerCase(),
       createdAt: new Date().toISOString(),
     };
 
@@ -151,9 +174,46 @@ export function AuthProvider({ children }) {
     if (!user) return {};
     return {
       'x-user-id': String(user.id),
-      'x-user-role': user.role,
+      'x-user-role': user.role?.toLowerCase() || 'user',
       'x-username': user.username || user.email
     };
+  };
+
+  // Helper to check if user has a specific permission
+  const hasPermission = (permissionId) => {
+    if (!user) return false;
+    const userRole = user.role?.toLowerCase();
+    
+    // Root has all permissions
+    if (userRole === 'root') return true;
+    
+    // Get roles from localStorage
+    try {
+      const storedRoles = localStorage.getItem("system_roles");
+      if (storedRoles) {
+        const roles = JSON.parse(storedRoles);
+        const roleConfig = roles.find(r => r.id === userRole);
+        if (roleConfig && roleConfig.permissions) {
+          return roleConfig.permissions.includes(permissionId);
+        }
+      }
+    } catch (err) {
+      console.error("Error checking permission:", err);
+    }
+    
+    // Default permissions by role
+    const defaultPerms = {
+      admin: ['view_dashboard', 'view_vouchers', 'edit_vouchers', 'delete_vouchers', 'export_vouchers', 
+              'view_inventory', 'manage_inventory', 'view_ledgers', 'manage_ledgers', 
+              'view_reports', 'export_reports', 'view_employees', 'manage_employees',
+              'view_users', 'manage_users', 'view_settings', 'manage_settings', 'view_logs'],
+      manager: ['view_dashboard', 'view_vouchers', 'edit_vouchers', 'view_inventory', 
+                'view_ledgers', 'view_reports', 'export_reports', 'view_employees'],
+      staff: ['view_dashboard', 'view_vouchers', 'view_inventory', 'view_ledgers'],
+      user: ['view_dashboard']
+    };
+    
+    return defaultPerms[userRole]?.includes(permissionId) || false;
   };
 
   const value = {
@@ -170,6 +230,7 @@ export function AuthProvider({ children }) {
     isRoot,
     isAdminOrHigher,
     getAuthHeaders,
+    hasPermission,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

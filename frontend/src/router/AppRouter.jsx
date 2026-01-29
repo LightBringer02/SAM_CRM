@@ -22,6 +22,7 @@ import SystemConfig from "../pages/SystemConfig";
 import QueueManagement from "../pages/QueueManagement";
 import BackupManagement from "../pages/BackupManagement";
 import ApiConfiguration from "../pages/ApiConfiguration";
+import Roles from "../pages/Roles";
 
 // Protected Route Wrapper
 function ProtectedLayout({ children }) {
@@ -226,6 +227,15 @@ export default function AppRouter() {
           element={
             <ProtectedLayout>
               <ApiConfiguration />
+            </ProtectedLayout>
+          }
+        />
+        {/* Roles & Permissions Route */}
+        <Route
+          path="/roles"
+          element={
+            <ProtectedLayout>
+              <Roles />
             </ProtectedLayout>
           }
         />

@@ -21,10 +21,10 @@ const SECURITY_CONFIG = {
   // Rate limiting
   rateLimit: {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    maxRequests: 100, // Max 100 requests per window
-    maxRequestsAuth: 500, // Higher limit for authenticated users
-    strictEndpoints: ['/api/sync/trigger', '/api/backup/create', '/api/system-config'],
-    strictLimit: 10 // Only 10 requests per window for sensitive endpoints
+    maxRequests: 500, // Max 500 requests per window for unauthenticated
+    maxRequestsAuth: 2000, // Higher limit for authenticated users
+    strictEndpoints: ['/api/sync/trigger', '/api/backup/create'],
+    strictLimit: 50 // 50 requests per window for sensitive endpoints
   },
   // Brute force protection
   bruteForce: {
