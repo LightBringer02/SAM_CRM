@@ -511,11 +511,11 @@ export default function VouchersPage() {
         );
       }
       
-      // If payType is explicitly cash, show as cash
+      // If payType is explicitly cash, show only "Cash" - no bank name
       if (isCashType) {
         return (
           <div className="flex flex-col">
-            <span className="font-medium text-gray-900 dark:text-gray-100">{bankName || 'Cash'}</span>
+            <span className="font-medium text-gray-900 dark:text-gray-100">Cash</span>
             <span className="text-xs text-gray-500 dark:text-gray-400">Cash Payment</span>
           </div>
         );

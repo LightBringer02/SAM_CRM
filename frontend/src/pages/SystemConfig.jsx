@@ -15,11 +15,14 @@ import {
   PowerOff,
   RefreshCw,
   Wifi,
-  WifiOff
+  WifiOff,
+  Cloud,
+  CloudOff
 } from "lucide-react";
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+// Use relative paths for API calls - works with both Vite proxy (dev) and cloud deployment
+// Only use full URL if explicitly set in environment
 
 export default function SystemConfig() {
   const { user, isRoot, getAuthHeaders } = useAuth();
@@ -87,7 +90,7 @@ export default function SystemConfig() {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/system-config/full`, {
+      const response = await axios.get(`/api/system-config/full`, {
         headers: getAuthHeaders()
       });
       if (response.data.success) {
@@ -122,7 +125,7 @@ export default function SystemConfig() {
       }
 
       // Save config
-      const response = await axios.put(`${API_BASE_URL}/api/system-config`, cleanConfig, {
+      const response = await axios.put(`/api/system-config`, cleanConfig, {
         headers: getAuthHeaders()
       });
       if (response.data.success) {
@@ -140,7 +143,7 @@ export default function SystemConfig() {
         // In LIVE/cloud mode, database reload may not be available from frontend
         if (cleanConfig.backendMode === 'LOCAL') {
           try {
-            await axios.post(`${API_BASE_URL}/api/database/reload`, {}, {
+            await axios.post(`/api/database/reload`, {}, {
               headers: getAuthHeaders(),
               timeout: 5000 // 5 second timeout
             });
@@ -152,7 +155,15 @@ export default function SystemConfig() {
       }
     } catch (err) {
       console.error("Failed to save config:", err);
-      setMessage({ type: "error", text: err.response?.data?.error || "Failed to save configuration" });
+      // Provide clearer error message for cloud deployments
+      const errorMsg = err.response?.data?.error || err.message || "Failed to save configuration";
+      if (errorMsg.includes('EROFS') || errorMsg.includes('read-only') || errorMsg.includes('permission') || errorMsg.includes('EACCES')) {
+        setMessage({ type: "error", text: "Cannot save config on cloud: File system is read-only. Set configuration using environment variables on your cloud platform." });
+      } else if (err.code === 'ERR_NETWORK' || errorMsg.includes('Network Error')) {
+        setMessage({ type: "error", text: "Network error: Cannot reach the backend server. Make sure the backend is running and accessible." });
+      } else {
+        setMessage({ type: "error", text: errorMsg });
+      }
     } finally {
       setSaving(false);
     }
@@ -165,7 +176,7 @@ export default function SystemConfig() {
     setSaving(true);
     setMessage(null);
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/system-config/reset`, {}, {
+      const response = await axios.post(`/api/system-config/reset`, {}, {
         headers: getAuthHeaders()
       });
       if (response.data.success) {
@@ -189,7 +200,7 @@ export default function SystemConfig() {
     setConfig(prev => ({ ...prev, serviceEnabled: newEnabled }));
     
     try {
-      await axios.put(`${API_BASE_URL}/api/system-config/service-toggle`, 
+      await axios.put(`/api/system-config/service-toggle`, 
         { enabled: newEnabled },
         { headers: getAuthHeaders() }
       );
@@ -209,7 +220,7 @@ export default function SystemConfig() {
     setTesting(true);
     setResult(null);
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/sync/test-tally`, 
+      const response = await axios.post(`/api/sync/test-tally`, 
         { url },
         { headers: getAuthHeaders() }
       );
@@ -230,7 +241,7 @@ export default function SystemConfig() {
     setTestingDatabase(true);
     setDatabaseTestResult(null);
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/sync/test-database`, 
+      const response = await axios.post(`/api/sync/test-database`, 
         config.database,
         { headers: getAuthHeaders() }
       );
@@ -252,7 +263,7 @@ export default function SystemConfig() {
     setSyncResult(null);
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/sync/trigger`, {}, {
+      const response = await axios.post(`/api/sync/trigger`, {}, {
         headers: getAuthHeaders()
       });
       

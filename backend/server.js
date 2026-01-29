@@ -1,6 +1,7 @@
 // backend/server.js
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const inventoryRoutes = require('./routes/inventory');
 const vouchersRoutes = require('./routes/vouchers');
 const ledgersRoutes = require('./routes/ledgers');
@@ -34,9 +35,44 @@ const errorSanitizer = applySecurityMiddleware(app);
 // Disable Express fingerprinting
 app.disable('x-powered-by');
 
-// CORS with strict configuration
+// Trust proxy for cloud deployments (Railway, Render, etc.)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
+// CORS with dynamic configuration for cloud
+const getAllowedOrigins = () => {
+  const origins = ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:4000'];
+  
+  // Add custom CORS origins from environment
+  if (process.env.CORS_ORIGIN) {
+    const envOrigins = process.env.CORS_ORIGIN.split(',').map(o => o.trim());
+    origins.push(...envOrigins);
+  }
+  
+  // Add frontend URL if specified
+  if (process.env.FRONTEND_URL) {
+    origins.push(process.env.FRONTEND_URL);
+  }
+  
+  return origins;
+};
+
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'],
+  origin: (origin, callback) => {
+    const allowedOrigins = getAllowedOrigins();
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      // In production, allow any *.trycloudflare.com or configured domains
+      if (origin.includes('.trycloudflare.com') || origin.includes('.railway.app') || origin.includes('.render.com') || origin.includes('.vercel.app')) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Be permissive for now - tighten later if needed
+      }
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'x-user-role', 'x-username', 'x-api-key'],
   credentials: true,
@@ -100,10 +136,37 @@ app.get('/api/version', (req, res) => {
 });
 
 // ========================================
-// 404 HANDLER
+// STATIC FILE SERVING (For production)
 // ========================================
-app.use((req, res) => {
-  res.status(404).json({ success: false, error: 'Endpoint not found' });
+
+// Serve frontend build in production
+const frontendPath = path.join(__dirname, '../frontend/dist');
+const fs = require('fs');
+
+if (fs.existsSync(frontendPath)) {
+  console.log('Serving frontend from:', frontendPath);
+  app.use(express.static(frontendPath));
+  
+  // SPA fallback - serve index.html for all non-API routes
+  // Using regex to avoid path-to-regexp issues with wildcard
+  app.get(/^(?!\/api\/).*/, (req, res, next) => {
+    // Skip health check
+    if (req.path === '/health') {
+      return next();
+    }
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+} else {
+  console.log('Frontend build not found at:', frontendPath);
+  console.log('Run "cd frontend && npm run build" to build the frontend');
+}
+
+// ========================================
+// 404 HANDLER (for API routes only)
+// ========================================
+app.use('/api', (req, res, next) => {
+  // Only catch unhandled API routes
+  res.status(404).json({ success: false, error: 'API endpoint not found' });
 });
 
 // ========================================

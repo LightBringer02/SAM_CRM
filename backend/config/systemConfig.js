@@ -48,11 +48,81 @@ const DEFAULT_CONFIG = {
 let configCache = null;
 
 /**
+ * Get configuration from environment variables (for cloud deployments)
+ * Environment variables take precedence over file-based config
+ */
+function getEnvConfig() {
+  const envConfig = {};
+  
+  // Tally URL
+  if (process.env.TALLY_URL) {
+    envConfig.tallyUrl = process.env.TALLY_URL;
+  }
+  
+  // Live Server URL
+  if (process.env.LIVE_SERVER_URL) {
+    envConfig.liveServerUrl = process.env.LIVE_SERVER_URL;
+  }
+  
+  // Backend Mode
+  if (process.env.BACKEND_MODE) {
+    envConfig.backendMode = process.env.BACKEND_MODE;
+  }
+  
+  // Database settings
+  if (process.env.DATABASE_HOST || process.env.DATABASE_URL) {
+    envConfig.database = {
+      host: process.env.DATABASE_HOST || 'localhost',
+      port: parseInt(process.env.DATABASE_PORT) || 5432,
+      name: process.env.DATABASE_NAME || 'samcrm',
+      user: process.env.DATABASE_USER || 'postgres',
+      password: process.env.DATABASE_PASSWORD || ''
+    };
+    
+    // Parse DATABASE_URL if provided (Heroku/Railway style)
+    if (process.env.DATABASE_URL) {
+      try {
+        const url = new URL(process.env.DATABASE_URL);
+        envConfig.database = {
+          host: url.hostname,
+          port: parseInt(url.port) || 5432,
+          name: url.pathname.slice(1),
+          user: url.username,
+          password: url.password
+        };
+      } catch (e) {
+        console.warn('Could not parse DATABASE_URL:', e.message);
+      }
+    }
+  }
+  
+  // Limits
+  if (process.env.MAX_ADMINS || process.env.MAX_TOTAL_USERS) {
+    envConfig.limits = {
+      maxAdmins: parseInt(process.env.MAX_ADMINS) || 5,
+      maxTotalUsers: parseInt(process.env.MAX_TOTAL_USERS) || 200
+    };
+  }
+  
+  // Service enabled
+  if (process.env.SERVICE_ENABLED !== undefined) {
+    envConfig.serviceEnabled = process.env.SERVICE_ENABLED !== 'false';
+  }
+  
+  return envConfig;
+}
+
+/**
  * Load configuration from file
  * Auto-creates default config if none exists - never throws error
+ * Environment variables take precedence over file-based config
  */
 function loadConfig() {
   try {
+    // Start with defaults
+    configCache = { ...DEFAULT_CONFIG };
+    
+    // Try to load from file
     if (fs.existsSync(CONFIG_FILE_PATH)) {
       const data = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
       const parsed = JSON.parse(data);
@@ -64,22 +134,40 @@ function loadConfig() {
         database: { ...DEFAULT_CONFIG.database, ...(parsed.database || {}) },
         limits: { ...DEFAULT_CONFIG.limits, ...(parsed.limits || {}) }
       };
-      // Remove deprecated fields
-      if (configCache.limits.maxUsersPerAdmin !== undefined) {
-        delete configCache.limits.maxUsersPerAdmin;
+    }
+    
+    // Apply environment variables (take precedence)
+    const envConfig = getEnvConfig();
+    if (Object.keys(envConfig).length > 0) {
+      configCache = {
+        ...configCache,
+        ...envConfig,
+        database: { ...configCache.database, ...(envConfig.database || {}) },
+        limits: { ...configCache.limits, ...(envConfig.limits || {}) }
+      };
+      console.log('Applied environment config overrides');
+    }
+    
+    // Remove deprecated fields
+    if (configCache.limits.maxUsersPerAdmin !== undefined) {
+      delete configCache.limits.maxUsersPerAdmin;
+    }
+    // Ensure serviceEnabled exists
+    if (configCache.serviceEnabled === undefined) {
+      configCache.serviceEnabled = true;
+    }
+    
+    // Try to save if file doesn't exist (may fail on read-only filesystems)
+    if (!fs.existsSync(CONFIG_FILE_PATH)) {
+      try {
+        saveConfig(configCache);
+      } catch (e) {
+        console.log('Config file not created (filesystem may be read-only):', e.message);
       }
-      // Ensure serviceEnabled exists
-      if (configCache.serviceEnabled === undefined) {
-        configCache.serviceEnabled = true;
-      }
-    } else {
-      // Create default config file silently
-      configCache = { ...DEFAULT_CONFIG };
-      saveConfig(configCache);
     }
   } catch (err) {
-    console.warn('Config load warning (using defaults):', err.message);
-    configCache = { ...DEFAULT_CONFIG };
+    console.warn('Config load warning (using defaults + env):', err.message);
+    configCache = { ...DEFAULT_CONFIG, ...getEnvConfig() };
     // Try to create the config file
     try {
       saveConfig(configCache);
@@ -92,6 +180,8 @@ function loadConfig() {
 
 /**
  * Save configuration to file
+ * Note: On cloud platforms with read-only filesystems, this will fail
+ * Use environment variables for cloud configuration instead
  */
 function saveConfig(config) {
   try {
@@ -113,8 +203,18 @@ function saveConfig(config) {
     return true;
   } catch (err) {
     console.error('Error saving system config:', err.message);
-    console.error('Config path:', CONFIG_FILE_PATH);
-    console.error('Full error:', err);
+    
+    // Check for read-only filesystem errors (common on cloud platforms)
+    if (err.code === 'EROFS' || err.code === 'EACCES' || err.code === 'EPERM') {
+      // Update in-memory cache even if file save fails
+      configCache = config;
+      console.log('Config updated in memory (file system is read-only)');
+      
+      // Throw a more informative error for cloud deployments
+      const cloudError = new Error('Cannot save config: File system is read-only. Use environment variables for cloud configuration.');
+      cloudError.code = 'CLOUD_READONLY';
+      throw cloudError;
+    }
     
     // Try direct write as fallback
     try {
@@ -124,6 +224,14 @@ function saveConfig(config) {
       return true;
     } catch (fallbackErr) {
       console.error('Fallback save also failed:', fallbackErr.message);
+      // Update cache anyway for current session
+      configCache = config;
+      
+      if (fallbackErr.code === 'EROFS' || fallbackErr.code === 'EACCES' || fallbackErr.code === 'EPERM') {
+        const cloudError = new Error('Cannot save config: File system is read-only. Use environment variables for cloud configuration.');
+        cloudError.code = 'CLOUD_READONLY';
+        throw cloudError;
+      }
       return false;
     }
   }

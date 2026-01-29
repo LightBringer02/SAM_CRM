@@ -452,6 +452,56 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
   }, [ledger.name]);
 
   // Fetch full vouchers when tab is clicked
+  // Compute GST-inclusive total for a voucher
+  const computeVoucherGstTotal = (voucher) => {
+    if (!Array.isArray(voucher.items) || voucher.items.length === 0) {
+      return voucher;
+    }
+    
+    let subtotal = 0, cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
+    const getStateCode = gstin => (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : '');
+    const supplierGstin = voucher.supplier_gstin || voucher.company_gstin || '';
+    const buyerGstin = voucher.party_gstin || '';
+    const supplierState = getStateCode(supplierGstin);
+    const buyerState = getStateCode(buyerGstin);
+    const isInterState = supplierGstin && buyerGstin && supplierState && buyerState && supplierState !== buyerState;
+    
+    voucher.items.forEach(item => {
+      const qty = Math.abs(Number(item.qty) || 0);
+      const rate = Math.abs(Number(item.rate) || 0);
+      const gst = item.gst || {};
+      const lineAmount = qty * rate;
+      
+      let cgstPercent = (item.CGSTPERCENT !== undefined && item.CGSTPERCENT !== 0) ? Number(item.CGSTPERCENT) : undefined;
+      let sgstPercent = (item.SGSTPERCENT !== undefined && item.SGSTPERCENT !== 0) ? Number(item.SGSTPERCENT) : undefined;
+      let igstPercent = (item.IGSTPERCENT !== undefined && item.IGSTPERCENT !== 0) ? Number(item.IGSTPERCENT) : undefined;
+      
+      if (cgstPercent === undefined && gst.cgst) cgstPercent = Number(gst.cgst);
+      if (sgstPercent === undefined && gst.sgst) sgstPercent = Number(gst.sgst);
+      if (igstPercent === undefined && gst.igst) igstPercent = Number(gst.igst);
+      
+      cgstPercent = cgstPercent !== undefined ? cgstPercent : 0;
+      sgstPercent = sgstPercent !== undefined ? sgstPercent : 0;
+      igstPercent = igstPercent !== undefined ? igstPercent : 0;
+      
+      let lineCgst = 0, lineSgst = 0, lineIgst = 0;
+      if (isInterState && igstPercent > 0) {
+        lineIgst = (lineAmount * igstPercent) / 100;
+      } else if (!isInterState && (cgstPercent > 0 || sgstPercent > 0)) {
+        lineCgst = (lineAmount * cgstPercent) / 100;
+        lineSgst = (lineAmount * sgstPercent) / 100;
+      }
+      
+      subtotal += lineAmount;
+      cgstAmount += lineCgst;
+      sgstAmount += lineSgst;
+      igstAmount += lineIgst;
+    });
+    
+    voucher.totalAmount = subtotal + cgstAmount + sgstAmount + igstAmount;
+    return voucher;
+  };
+
   const fetchVouchers = async () => {
     if (vouchersFetched) return;
     setLoadingVouchers(true);
@@ -465,7 +515,9 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
         const filtered = voucherData.filter(v => 
           (v.party_name || v.party_ledger || '').toLowerCase() === ledger.name.toLowerCase()
         );
-        allVouchers.push(...filtered.map(v => ({ ...v, voucher_type: v.voucher_type || type })));
+        // Compute GST totals for each voucher
+        const withGst = filtered.map(v => computeVoucherGstTotal({ ...v, voucher_type: v.voucher_type || type }));
+        allVouchers.push(...withGst);
       }
       
       allVouchers.sort((a, b) => new Date(b.date) - new Date(a.date));
