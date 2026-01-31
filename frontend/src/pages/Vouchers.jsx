@@ -74,6 +74,118 @@ import { useNavigate } from "react-router-dom";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
+// Print styles - hide everything except invoice content when printing
+const printStyles = `
+@media print {
+  /* Hide the entire page by default */
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  /* Hide sidebar, navbar, and all page content */
+  body > * {
+    visibility: hidden !important;
+  }
+  
+  /* Hide the main layout wrapper */
+  .bg-white.dark\\:bg-gray-900,
+  .p-6,
+  [class*="sidebar"],
+  [class*="navbar"],
+  nav,
+  header,
+  aside {
+    visibility: hidden !important;
+  }
+  
+  /* Show only the invoice print area */
+  .invoice-print-area,
+  .invoice-print-area * {
+    visibility: visible !important;
+  }
+  
+  /* Position the invoice at top-left */
+  .invoice-print-area {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 210mm !important;
+    max-width: 100% !important;
+    padding: 8mm !important;
+    margin: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    z-index: 99999 !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  
+  /* Hide modal overlay and buttons */
+  .print-hide,
+  .fixed.inset-0.z-50::before,
+  button {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  
+  /* Ensure scrollable areas print fully */
+  .overflow-y-auto,
+  .overflow-x-auto {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+  
+  /* Page setup */
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+  
+  /* Ensure proper page breaks */
+  .invoice-print-area table {
+    page-break-inside: auto;
+  }
+  
+  .invoice-print-area tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  
+  /* Ensure black text for printing */
+  .invoice-print-area,
+  .invoice-print-area * {
+    color: black !important;
+    background-color: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Make borders visible */
+  .invoice-print-area table,
+  .invoice-print-area th,
+  .invoice-print-area td,
+  .invoice-print-area .border {
+    border-color: #333 !important;
+  }
+}
+`;
+
+// Helper function to extract numeric part from voucher number for sorting
+// Handles formats like "SAM/25-26/5", "INV-001", "PUR/2024/123" etc.
+function extractVoucherNumber(voucherNo) {
+  if (!voucherNo) return 0;
+  const str = String(voucherNo);
+  // Get the last numeric segment
+  const matches = str.match(/(\d+)/g);
+  if (matches && matches.length > 0) {
+    return parseInt(matches[matches.length - 1], 10);
+  }
+  return 0;
+}
+
 // ============================================================
 // HELPER FUNCTIONS
 // ============================================================
@@ -168,10 +280,15 @@ function getLastFiveSessions() {
 
 // Voucher types
 const VOUCHER_TYPES = [
+  { value: "all", label: "All" },
   { value: "sales", label: "Sales" },
   { value: "purchase", label: "Purchase" },
   { value: "receipt", label: "Receipt" },
   { value: "payment", label: "Payment" },
+  { value: "contra", label: "Contra" },
+  { value: "journal", label: "Journal" },
+  { value: "credit_note", label: "Credit Note" },
+  { value: "debit_note", label: "Debit Note" },
 ];
 
 // ============================================================
@@ -183,9 +300,9 @@ export default function VouchersPage() {
   const [selectedVoucher, setSelectedVoucher] = useState(null);
   const [companyDetails, setCompanyDetails] = useState(null);
   const invoiceRef = useRef(null);
-  // Persist voucher type selection in localStorage
+  // Persist voucher type selection in localStorage - default to 'all' to show all vouchers
   const [type, setType] = useState(() => {
-    return localStorage.getItem('voucherType') || "sales";
+    return localStorage.getItem('voucherType') || "all";
   });
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -328,7 +445,26 @@ export default function VouchersPage() {
                     const buyerGstin = voucher.party_gstin || '';
                     const supplierState = getStateCode(supplierGstin);
                     const buyerState = getStateCode(buyerGstin);
-                    const isInterState = supplierGstin && buyerGstin && supplierState && buyerState && supplierState !== buyerState;
+                    
+                    // FIXED: Handle unregistered buyers (no GSTIN) - use place of supply or state
+                    let isInterState = false;
+                    if (supplierGstin && buyerGstin && supplierState && buyerState) {
+                      // Both parties registered: compare GSTIN state codes
+                      isInterState = supplierState !== buyerState;
+                    } else if (supplierGstin && supplierState) {
+                      // Buyer unregistered: check place of supply or state name
+                      const placeOfSupply = voucher.place_of_supply || '';
+                      const partyState = voucher.party_state || voucher.buyer_state || '';
+                      
+                      // Try to extract state code from place of supply
+                      if (placeOfSupply) {
+                        const codeMatch = placeOfSupply.match(/(\d{2})/);
+                        if (codeMatch && codeMatch[1] !== supplierState) {
+                          isInterState = true;
+                        }
+                      }
+                    }
+                    
                     voucher.items.forEach(item => {
                       const qty = Math.abs(Number(item.qty) || 0);
                       const rate = Math.abs(Number(item.rate) || 0);
@@ -343,9 +479,15 @@ export default function VouchersPage() {
                       cgstPercent = cgstPercent !== undefined ? cgstPercent : 0;
                       sgstPercent = sgstPercent !== undefined ? sgstPercent : 0;
                       igstPercent = igstPercent !== undefined ? igstPercent : 0;
+                      
+                      // Calculate combined GST for IGST (CGST + SGST = IGST)
+                      const combinedGstPercent = cgstPercent + sgstPercent;
+                      
                       let lineCgst = 0, lineSgst = 0, lineIgst = 0;
-                      if (isInterState && igstPercent > 0) {
-                        lineIgst = (lineAmount * igstPercent) / 100;
+                      if (isInterState) {
+                        // For inter-state, use IGST (or combine CGST+SGST if IGST not specified)
+                        const effectiveIgstPercent = igstPercent > 0 ? igstPercent : combinedGstPercent;
+                        lineIgst = (lineAmount * effectiveIgstPercent) / 100;
                       } else if (!isInterState && (cgstPercent > 0 || sgstPercent > 0)) {
                         lineCgst = (lineAmount * cgstPercent) / 100;
                         lineSgst = (lineAmount * sgstPercent) / 100;
@@ -390,6 +532,7 @@ export default function VouchersPage() {
         { key: "voucher_number", label: "Voucher No" },
         { key: "date", label: "Date" },
         { key: "party_ledger", label: "Party Ledger" },
+        { key: "party_voucher_count", label: "Party V#" },
         { key: "pay_type", label: "Pay Type" },
         { key: "amount", label: "Amount" },
       ];
@@ -398,6 +541,7 @@ export default function VouchersPage() {
         { key: "voucher_number", label: "Voucher No" },
         { key: "date", label: "Date" },
         { key: "party_ledger", label: "Party Ledger" },
+        { key: "party_voucher_count", label: "Party V#" },
         { key: "amount", label: "Amount" },
         { key: "payment_status", label: "Payment Status" },
       ];
@@ -406,14 +550,42 @@ export default function VouchersPage() {
         { key: "voucher_number", label: "Voucher No" },
         { key: "date", label: "Date" },
         { key: "party_ledger", label: "Party Ledger" },
+        { key: "party_voucher_count", label: "Party V#" },
+        { key: "supplier_ref", label: "Supp. Inv. No" },
+        { key: "supplier_date", label: "Supp. Date" },
+        { key: "amount", label: "Amount" },
+      ];
+    } else if (type === "contra") {
+      return [
+        { key: "voucher_number", label: "Voucher No" },
+        { key: "date", label: "Date" },
+        { key: "party_ledger", label: "Ledger" },
+        { key: "bank_ledger", label: "Bank/Cash" },
+        { key: "amount", label: "Amount" },
+      ];
+    } else if (type === "journal") {
+      return [
+        { key: "voucher_number", label: "Voucher No" },
+        { key: "date", label: "Date" },
+        { key: "party_ledger", label: "Party Ledger" },
+        { key: "narration", label: "Narration" },
+        { key: "amount", label: "Amount" },
+      ];
+    } else if (type === "credit_note" || type === "debit_note") {
+      return [
+        { key: "voucher_number", label: "Voucher No" },
+        { key: "date", label: "Date" },
+        { key: "party_ledger", label: "Party Ledger" },
+        { key: "reference", label: "Reference" },
         { key: "amount", label: "Amount" },
       ];
     }
+    // For "all" type - show voucher type column
     return [
       { key: "voucher_number", label: "Voucher No" },
       { key: "date", label: "Date" },
       { key: "party_ledger", label: "Party Ledger" },
-      { key: "voucher_type", label: "Voucher Type" },
+      { key: "voucher_type", label: "Type" },
       { key: "amount", label: "Amount" },
     ];
   };
@@ -547,11 +719,81 @@ export default function VouchersPage() {
       // Default fallback - show raw values
       return checkNo ? `${row.pay_type || ''} (${checkNo})` : (row.pay_type || bankName || '-');
     }
+    // Narration column - truncate if too long
+    if (col.key === "narration") {
+      const narr = value || '';
+      return narr.length > 40 ? narr.substring(0, 40) + '...' : narr || '-';
+    }
+    // Reference column
+    if (col.key === "reference") {
+      return value || row.reference_no || row.SUPPLIERINVOICENO || '-';
+    }
+    // Supplier invoice reference for purchase vouchers
+    if (col.key === "supplier_ref") {
+      return row.SUPPLIERINVOICENO || row.supplier_invoice_no || row.reference || row.reference_no || '-';
+    }
+    // Supplier invoice date for purchase vouchers
+    if (col.key === "supplier_date") {
+      const supplierDate = row.SUPPLIERINVOICEDATE || row.supplier_invoice_date || row.BASICINVOICEDATE || '';
+      if (!supplierDate) return '-';
+      // Format the date
+      try {
+        const d = new Date(supplierDate);
+        if (isNaN(d.getTime())) return supplierDate;
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      } catch { return supplierDate; }
+    }
+    // Voucher type column (for "all" view)
+    if (col.key === "voucher_type") {
+      const typeMap = {
+        'sales': 'Sales',
+        'purchase': 'Purchase',
+        'receipt': 'Receipt',
+        'payment': 'Payment',
+        'contra': 'Contra',
+        'journal': 'Journal',
+        'credit_note': 'Credit Note',
+        'debit_note': 'Debit Note'
+      };
+      return typeMap[value?.toLowerCase()] || value || '-';
+    }
+    // Bank/Cash column for contra
+    if (col.key === "bank_ledger") {
+      return value || row.pay_type || '-';
+    }
+    // Party voucher count - show this voucher's sequential number for the party
+    if (col.key === "party_voucher_count") {
+      // Calculate how many vouchers exist for this party before this one (by date)
+      const party = row.party_ledger || '';
+      const voucherDate = row.date || '';
+      const voucherId = row.guid || row.voucher_number || row.number || '';
+      
+      // Get all vouchers for this party, sorted by date ascending
+      const partyVouchers = vouchers
+        .filter(v => (v.party_ledger || '') === party)
+        .sort((a, b) => {
+          const dateA = new Date(a.date || '1900-01-01');
+          const dateB = new Date(b.date || '1900-01-01');
+          if (dateA.getTime() !== dateB.getTime()) return dateA - dateB;
+          // If same date, sort by voucher number
+          return (a.voucher_number || '').localeCompare(b.voucher_number || '');
+        });
+      
+      // Find the index of this voucher
+      const index = partyVouchers.findIndex(v => 
+        (v.guid || v.voucher_number || v.number) === voucherId
+      );
+      
+      return index >= 0 ? `#${index + 1}` : '-';
+    }
     return value || '';
   };
 
   return (
     <div className="p-6 bg-white dark:bg-gray-900 min-h-screen">
+      {/* Inject print styles */}
+      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
+      
       {error && <div className="text-red-600 dark:text-red-400 font-bold mb-4">{error}</div>}
       <h1 className="text-2xl font-bold mb-4 text-blue-800 dark:text-blue-400">Vouchers</h1>
       
@@ -646,37 +888,43 @@ export default function VouchersPage() {
         </div>
       </div>
       
-      {/* Voucher Type Buttons */}
-      <div className="flex flex-wrap gap-4 mb-4 items-center">
-        <div className="flex gap-1">
-          {VOUCHER_TYPES.map(vt => (
-            <button
-              key={vt.value}
-              className={`px-2 py-1 rounded text-sm font-semibold border ${
-                type === vt.value
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-600 hover:bg-blue-50 dark:hover:bg-gray-700"
-              }`}
-              onClick={() => setType(vt.value)}
-              type="button"
-              style={{ minWidth: 60 }}
-              aria-pressed={type === vt.value}
-            >
-              {vt.label}
-            </button>
-          ))}
+      {/* Voucher Type Buttons and Controls */}
+      <div className="flex flex-wrap gap-4 mb-4 items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex flex-wrap gap-1">
+            {VOUCHER_TYPES.map(vt => (
+              <button
+                key={vt.value}
+                className={`px-2 py-1 rounded text-xs font-semibold border transition-all ${
+                  type === vt.value
+                    ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                    : "bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-gray-700"
+                }`}
+                onClick={() => setType(vt.value)}
+                type="button"
+                aria-pressed={type === vt.value}
+              >
+                {vt.label}
+              </button>
+            ))}
+          </div>
+          
+          {/* Sort by Date Button */}
+          <button
+            className="px-3 py-1 rounded text-xs font-semibold border bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1"
+            onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
+            type="button"
+            title={`Sort by date ${sortOrder === "desc" ? "ascending" : "descending"}`}
+          >
+            <span>Date</span>
+            <span>{sortOrder === "desc" ? "↓" : "↑"}</span>
+          </button>
         </div>
         
-        {/* Sort by Date Button */}
-        <button
-          className="px-3 py-1 rounded text-sm font-semibold border bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1"
-          onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
-          type="button"
-          title={`Sort by date ${sortOrder === "desc" ? "ascending" : "descending"}`}
-        >
-          <span>Date</span>
-          <span>{sortOrder === "desc" ? "↓" : "↑"}</span>
-        </button>
+        {/* Voucher Count */}
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          <span className="font-semibold">{vouchers.length}</span> voucher{vouchers.length !== 1 ? 's' : ''} found
+        </div>
       </div>
       
       {/* Vouchers Table */}
@@ -700,9 +948,19 @@ export default function VouchersPage() {
               {[...vouchers].sort((a, b) => {
                 const dateA = new Date(a.date);
                 const dateB = new Date(b.date);
-                return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+                const dateDiff = sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+                // If dates are equal, sort by voucher number
+                if (dateDiff === 0) {
+                  const numA = extractVoucherNumber(a.voucher_number || a.number);
+                  const numB = extractVoucherNumber(b.voucher_number || b.number);
+                  return sortOrder === "desc" ? numB - numA : numA - numB;
+                }
+                return dateDiff;
               }).map((row, idx) => {
-                const isClickable = type === "sales" || type === "purchase";
+                // Make all vouchers with items clickable (sales, purchase, credit_note, debit_note)
+                const voucherTypeLC = (type || '').toLowerCase();
+                const isClickable = voucherTypeLC === "sales" || voucherTypeLC === "purchase" || 
+                                   voucherTypeLC === "credit_note" || voucherTypeLC === "debit_note";
                 const rowColor = getRowColor(row);
                 
                 return (
@@ -784,7 +1042,48 @@ export default function VouchersPage() {
         const getStateCode = gstin => (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : '');
         const supplierState = getStateCode(supplierGstin);
         const buyerState = getStateCode(buyerGstin);
-        const isInterState = supplierGstin && buyerGstin && supplierState && buyerState && supplierState !== buyerState;
+        
+        // Get place of supply and party state for unregistered buyers
+        const placeOfSupply = v.place_of_supply || v.placeofsupply || '';
+        const partyState = v.party_state || v.buyer_state || '';
+        const consigneeState = v.consignee_state || '';
+        
+        // Determine if inter-state transaction
+        // FIXED: For unregistered firms (no GSTIN), use place of supply or state name to determine
+        // inter-state vs intra-state. If buyer has no GSTIN but is from different state, use IGST.
+        let isInterState = false;
+        
+        if (supplierGstin && buyerGstin && supplierState && buyerState) {
+          // Both parties registered: compare GSTIN state codes
+          isInterState = supplierState !== buyerState;
+        } else if (supplierGstin && supplierState) {
+          // Buyer unregistered: check place of supply or state name
+          // Extract state code from place of supply if available (format: "State - Code" or just state name)
+          let derivedBuyerStateCode = '';
+          
+          // Try to extract state code from place of supply
+          if (placeOfSupply) {
+            const codeMatch = placeOfSupply.match(/(\d{2})/);
+            if (codeMatch) {
+              derivedBuyerStateCode = codeMatch[1];
+            }
+          }
+          
+          // Fallback: Check if buyer/consignee state name differs from supplier state
+          if (!derivedBuyerStateCode) {
+            // Get supplier state name from company details
+            const companyStateName = (company.state || '').toLowerCase().trim();
+            const buyerStateName = (partyState || consigneeState || '').toLowerCase().trim();
+            
+            // If state names are available and different, it's inter-state
+            if (companyStateName && buyerStateName && companyStateName !== buyerStateName) {
+              isInterState = true;
+            }
+          } else {
+            // Compare derived state code with supplier state code
+            isInterState = derivedBuyerStateCode !== supplierState;
+          }
+        }
 
         const computedItems = items.map(item => {
           const qty = Math.abs(Number(item.qty) || 0);
@@ -801,10 +1100,18 @@ export default function VouchersPage() {
           cgstPercent = cgstPercent !== undefined ? cgstPercent : 0;
           sgstPercent = sgstPercent !== undefined ? sgstPercent : 0;
           igstPercent = igstPercent !== undefined ? igstPercent : 0;
+          
+          // Calculate combined GST rate for IGST (CGST + SGST = IGST)
+          const combinedGstPercent = cgstPercent + sgstPercent;
+          
           let lineCgst = 0, lineSgst = 0, lineIgst = 0;
-          // GST logic: Use IGST only for inter-state, else CGST+SGST for intra-state
-          if (isInterState && igstPercent > 0) {
-            lineIgst = (lineAmount * igstPercent) / 100;
+          // GST logic: 
+          // - Inter-state (including unregistered buyers from different state): Use IGST
+          // - Intra-state: Use CGST + SGST
+          if (isInterState) {
+            // For inter-state, use IGST rate (or combine CGST+SGST if IGST not specified)
+            const effectiveIgstPercent = igstPercent > 0 ? igstPercent : combinedGstPercent;
+            lineIgst = (lineAmount * effectiveIgstPercent) / 100;
           } else if (!isInterState && (cgstPercent > 0 || sgstPercent > 0)) {
             lineCgst = (lineAmount * cgstPercent) / 100;
             lineSgst = (lineAmount * sgstPercent) / 100;
@@ -813,7 +1120,7 @@ export default function VouchersPage() {
           cgstAmount += lineCgst;
           sgstAmount += lineSgst;
           igstAmount += lineIgst;
-          return { ...item, amount: lineAmount, cgst: lineCgst, sgst: lineSgst, igst: lineIgst, cgstPercent, sgstPercent, igstPercent };
+          return { ...item, amount: lineAmount, cgst: lineCgst, sgst: lineSgst, igst: lineIgst, cgstPercent, sgstPercent, igstPercent, isInterState };
         });
         let totalAmount = subtotal + cgstAmount + sgstAmount + igstAmount;
         if (v.voucher_type === 'credit_note' || v.type === 'credit_note') {
@@ -828,17 +1135,17 @@ export default function VouchersPage() {
         
         return (
           <div 
-            className="fixed inset-0 z-50 flex items-center justify-center" 
+            className="fixed inset-0 z-50 flex items-center justify-center print:!bg-transparent" 
             style={{ background: "rgba(0,0,0,0.5)" }} 
             onClick={() => setSelectedVoucher(null)}
           >
             <div 
-              className="bg-white border border-gray-400 flex flex-col shadow-xl" 
-              style={{ width: "210mm", maxWidth: "95vw", maxHeight: "95vh" }} 
+              className="bg-white border border-gray-400 flex flex-col shadow-xl print:!shadow-none print:!border-none" 
+              style={{ width: "210mm", maxWidth: "98vw", maxHeight: "95vh", minWidth: "800px" }} 
               onClick={e => e.stopPropagation()}
             >
-              {/* Modal Header - Fixed */}
-              <div className="flex justify-between items-center p-4 border-b border-gray-300 bg-gray-50">
+              {/* Modal Header - Fixed - Hidden when printing */}
+              <div className="flex justify-between items-center p-4 border-b border-gray-300 bg-gray-50 print-hide">
                 <h2 className="text-lg font-bold">TAX INVOICE</h2>
                 <div className="flex gap-2">
                   <button 
@@ -868,69 +1175,115 @@ export default function VouchersPage() {
                 </div>
               </div>
               
-              {/* Scrollable Invoice Content */}
-              <div ref={invoiceRef} className="flex-1 overflow-y-auto p-6 bg-white">
+              {/* Scrollable Invoice Content - This is what gets printed */}
+              <div ref={invoiceRef} className="invoice-print-area flex-1 overflow-auto p-6 bg-white print:!overflow-visible print:!max-h-none" style={{minWidth: '760px'}}>
                 {/* Invoice Header */}
                 <div className="text-center border-b border-gray-400 pb-2 mb-4">
                   <h1 className="text-xl font-bold">TAX INVOICE</h1>
                 </div>
                 
-                {/* Supplier and Invoice Details */}
-                <div className="flex justify-between border border-gray-400 mb-0">
-                  <div className="flex-1 p-3 border-r border-gray-400">
-                    <p className="font-bold text-sm mb-2">Supplier Details</p>
-                    <table className="w-full text-xs border-collapse">
-                      <tbody>
-                        <tr>
-                          <td className="font-semibold border border-gray-200 px-2 py-1 w-24">Name</td>
-                          <td className="border border-gray-200 px-2 py-1">{supplierName}</td>
-                        </tr>
-                        <tr>
-                          <td className="font-semibold border border-gray-200 px-2 py-1">Address</td>
-                          <td className="border border-gray-200 px-2 py-1">{supplierAddress}</td>
-                        </tr>
-                        <tr>
-                          <td className="font-semibold border border-gray-200 px-2 py-1">GSTIN</td>
-                          <td className="border border-gray-200 px-2 py-1">{supplierGstin}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="w-64 p-3 text-xs">
-                    <p><span className="font-semibold">Voucher No:</span> {voucherNo}</p>
-                    {/* Always show Supplier Invoice No for purchase vouchers, even if empty */}
-                    {String(v.voucher_type).toLowerCase() === 'purchase' && (
-                      <p><span className="font-semibold">Supplier Invoice No:</span> {v.SUPPLIERINVOICENO || v.BASICINVOICENO || v.BASICSHIPPINGINVOICENO || v.reference || ''}</p>
-                    )}
-                    <p><span className="font-semibold">Date:</span> {invoiceDate}</p>
+                {/* Supplier and Invoice Details - Enhanced Layout like Tax Invoice */}
+                <div className="border border-gray-400 mb-0">
+                  <div className="flex flex-nowrap">
+                    {/* Left: Supplier Details */}
+                    <div className="flex-1 min-w-[280px] p-3 border-r border-gray-400">
+                      <p className="font-bold text-base whitespace-nowrap">{supplierName || '-'}</p>
+                      <p className="text-xs">{supplierAddress || '-'}</p>
+                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">GSTIN/UIN:</span> {supplierGstin || '-'}</p>
+                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">State Name:</span> {company.state || v.party_state || '-'}{supplierState ? `, Code: ${supplierState}` : ''}</p>
+                      {companyMobile && <p className="text-xs whitespace-nowrap"><span className="font-semibold">Contact:</span> {companyMobile}</p>}
+                      {company.email && <p className="text-xs whitespace-nowrap"><span className="font-semibold">E-Mail:</span> {company.email}</p>}
+                    </div>
+                    {/* Right: Invoice Details Grid */}
+                    <div className="w-[420px] flex-shrink-0">
+                      <table className="w-full text-xs border-collapse table-fixed">
+                        <tbody>
+                          <tr>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold w-[90px] whitespace-nowrap">Invoice No.</td>
+                            <td className="border border-gray-300 px-2 py-1 w-[120px] truncate" title={voucherNo || '-'}>{voucherNo || '-'}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold w-[80px] whitespace-nowrap">Dated</td>
+                            <td className="border border-gray-300 px-2 py-1 w-[100px] whitespace-nowrap">{invoiceDate || '-'}</td>
+                          </tr>
+                          {(v.delivery_note || v.mode_of_payment) && (
+                          <tr>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Delivery Note</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.delivery_note || '-'}>{v.delivery_note || '-'}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Mode/Terms</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.mode_of_payment || '-'}>{v.mode_of_payment || '-'}</td>
+                          </tr>
+                          )}
+                          {(v.reference_no || v.reference || v.other_references) && (
+                          <tr>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Reference No.</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.reference_no || v.reference || '-'}>{v.reference_no || v.reference || '-'}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Other Ref.</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.other_references || '-'}>{v.other_references || '-'}</td>
+                          </tr>
+                          )}
+                          {(v.buyers_order_no || v.buyers_order_date) && (
+                          <tr>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Buyer's Order</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.buyers_order_no || '-'}>{v.buyers_order_no || '-'}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Dated</td>
+                            <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{v.buyers_order_date || '-'}</td>
+                          </tr>
+                          )}
+                          {(v.dispatch_doc_no || v.delivery_note_date) && (
+                          <tr>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Dispatch Doc</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.dispatch_doc_no || '-'}>{v.dispatch_doc_no || '-'}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Del. Note Date</td>
+                            <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{v.delivery_note_date || '-'}</td>
+                          </tr>
+                          )}
+                          {(v.dispatched_through || v.destination) && (
+                          <tr>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Dispatched Via</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.dispatched_through || '-'}>{v.dispatched_through || '-'}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Destination</td>
+                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.destination || '-'}>{v.destination || '-'}</td>
+                          </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
                 
-                {/* Buyer Details */}
+                {/* Consignee (Ship to) and Buyer (Bill to) */}
+                <div className="border border-t-0 border-gray-400 mb-0">
+                  <div className="flex flex-nowrap">
+                    {/* Consignee (Ship to) */}
+                    <div className="flex-1 min-w-[280px] p-3 border-r border-gray-400">
+                      <p className="font-semibold text-xs mb-1">Consignee (Ship to)</p>
+                      <p className="font-bold text-sm whitespace-nowrap">{v.consignee_name || buyerName || '-'}</p>
+                      <p className="text-xs">{v.consignee_address || buyerAddress || '-'}</p>
+                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">GSTIN/UIN:</span> {v.consignee_gstin || buyerGstin || 'Unregistered'}</p>
+                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">State Name:</span> {v.consignee_state || partyState || '-'}{v.consignee_state_code || buyerState ? `, Code: ${v.consignee_state_code || buyerState}` : ''}</p>
+                      {(v.consignee_pincode || v.buyer_pincode) && <p className="text-xs whitespace-nowrap"><span className="font-semibold">PIN:</span> {v.consignee_pincode || v.buyer_pincode}</p>}
+                    </div>
+                    {/* Terms of Delivery */}
+                    <div className="w-[420px] flex-shrink-0 p-3">
+                      <p className="font-semibold text-xs mb-1">Terms of Delivery</p>
+                      <p className="text-xs">{v.terms_of_delivery || '-'}</p>
+                      {v.vehicle_number && <p className="text-xs mt-1"><span className="font-semibold">Vehicle No:</span> {v.vehicle_number}</p>}
+                      {v.bill_of_lading_no && <p className="text-xs"><span className="font-semibold">Bill of Lading:</span> {v.bill_of_lading_no}</p>}
+                      {v.eway_bill_no && <p className="text-xs"><span className="font-semibold">E-Way Bill:</span> {v.eway_bill_no}</p>}
+                      {v.dispatch_from_name && <p className="text-xs mt-1"><span className="font-semibold">Dispatch From:</span> {v.dispatch_from_name}{v.dispatch_from_place ? `, ${v.dispatch_from_place}` : ''}</p>}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Buyer (Bill to) */}
                 <div className="border border-t-0 border-gray-400 p-3 mb-4">
-                  <p className="font-bold text-sm mb-2">Buyer Details</p>
-                  <table className="w-full text-xs border-collapse">
-                    <tbody>
-                      {buyerName && (
-                        <tr>
-                          <td className="font-semibold border border-gray-200 px-2 py-1 w-24">Name</td>
-                          <td className="border border-gray-200 px-2 py-1">{buyerName}</td>
-                        </tr>
-                      )}
-                      {buyerAddress && (
-                        <tr>
-                          <td className="font-semibold border border-gray-200 px-2 py-1">Address</td>
-                          <td className="border border-gray-200 px-2 py-1">{buyerAddress}</td>
-                        </tr>
-                      )}
-                      {buyerGstin && (
-                        <tr>
-                          <td className="font-semibold border border-gray-200 px-2 py-1">GSTIN</td>
-                          <td className="border border-gray-200 px-2 py-1">{buyerGstin}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                  <p className="font-semibold text-xs mb-1">Buyer (Bill to)</p>
+                  <p className="font-bold text-sm whitespace-nowrap">{buyerName || '-'}</p>
+                  <p className="text-xs">{buyerAddress || '-'}</p>
+                  <div className="flex flex-wrap gap-4 text-xs">
+                    <p className="whitespace-nowrap"><span className="font-semibold">GSTIN/UIN:</span> {buyerGstin || 'N/A'}</p>
+                    <p className="whitespace-nowrap"><span className="font-semibold">State:</span> {v.buyer_state || partyState || 'N/A'}, <span className="font-semibold">Code:</span> {v.buyer_state_code || buyerState || 'N/A'}</p>
+                    <p className="whitespace-nowrap"><span className="font-semibold">Place of Supply:</span> {placeOfSupply || 'N/A'}</p>
+                  </div>
                 </div>
                 
                 {/* Items Table */}
@@ -990,6 +1343,54 @@ export default function VouchersPage() {
                     </tbody>
                   </table>
                 </div>
+                
+                {/* HSN/SAC Summary Table */}
+                {computedItems.length > 0 && (
+                <div className="w-full mb-2">
+                  <p className="text-xs font-semibold mb-1">HSN/SAC Summary</p>
+                  <table className="border border-gray-400 text-xs w-full">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="border border-gray-300 p-1 text-left">HSN/SAC</th>
+                        <th className="border border-gray-300 p-1 text-right">Taxable Value</th>
+                        <th className="border border-gray-300 p-1 text-center">GST Rate</th>
+                        <th className="border border-gray-300 p-1 text-right">CGST</th>
+                        <th className="border border-gray-300 p-1 text-right">SGST</th>
+                        <th className="border border-gray-300 p-1 text-right">IGST</th>
+                        <th className="border border-gray-300 p-1 text-right">Total Tax</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        // Group items by HSN
+                        const hsnGroups = {};
+                        computedItems.forEach(item => {
+                          const hsn = item.hsn || 'N/A';
+                          if (!hsnGroups[hsn]) {
+                            hsnGroups[hsn] = { taxable: 0, cgst: 0, sgst: 0, igst: 0, rate: (item.cgstPercent || 0) + (item.sgstPercent || 0) || (item.igstPercent || 0) };
+                          }
+                          hsnGroups[hsn].taxable += (item.amount || 0);
+                          hsnGroups[hsn].cgst += (item.cgst || 0);
+                          hsnGroups[hsn].sgst += (item.sgst || 0);
+                          hsnGroups[hsn].igst += (item.igst || 0);
+                        });
+                        return Object.entries(hsnGroups).map(([hsn, data]) => (
+                          <tr key={hsn}>
+                            <td className="border border-gray-300 p-1">{hsn}</td>
+                            <td className="border border-gray-300 p-1 text-right">₹{data.taxable.toFixed(2)}</td>
+                            <td className="border border-gray-300 p-1 text-center">{data.rate}%</td>
+                            <td className="border border-gray-300 p-1 text-right">₹{data.cgst.toFixed(2)}</td>
+                            <td className="border border-gray-300 p-1 text-right">₹{data.sgst.toFixed(2)}</td>
+                            <td className="border border-gray-300 p-1 text-right">₹{data.igst.toFixed(2)}</td>
+                            <td className="border border-gray-300 p-1 text-right">₹{(data.cgst + data.sgst + data.igst).toFixed(2)}</td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+                )}
+                
                 {/* GST Summary Sub-Table (after items, before Amount in Words) */}
                 <div className="w-full mb-2">
                   <table className="border border-gray-400 rounded bg-gray-50 text-xs w-full">

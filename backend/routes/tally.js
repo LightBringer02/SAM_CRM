@@ -110,4 +110,147 @@ router.post('/sync', async (req, res) => {
   }
 });
 
+// Create Sales Voucher in Tally
+router.post('/create-voucher', async (req, res) => {
+  try {
+    const connected = await pingTally();
+    if (!connected) {
+      return res.status(503).json({ success: false, error: 'Tally not connected' });
+    }
+    
+    const voucher = req.body;
+    const TALLY_URL = getActiveTallyUrl();
+    
+    // Build items XML
+    let itemsXml = '';
+    if (voucher.items && Array.isArray(voucher.items)) {
+      voucher.items.forEach(item => {
+        const amount = (item.qty || 1) * (item.rate || 0);
+        itemsXml += `
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME>${item.name || ''}</STOCKITEMNAME>
+            <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+            <BILLEDQTY>${item.qty || 1} ${item.per || 'Nos'}</BILLEDQTY>
+            <RATE>${item.rate || 0}/${item.per || 'Nos'}</RATE>
+            <AMOUNT>-${amount}</AMOUNT>
+            <ACTUALQTY>${item.qty || 1} ${item.per || 'Nos'}</ACTUALQTY>
+          </ALLINVENTORYENTRIES.LIST>`;
+      });
+    }
+    
+    // Build voucher XML
+    const voucherXml = `
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Import</TALLYREQUEST>
+    <TYPE>Data</TYPE>
+    <ID>Vouchers</ID>
+  </HEADER>
+  <BODY>
+    <DESC></DESC>
+    <DATA>
+      <TALLYMESSAGE>
+        <VOUCHER VCHTYPE="${voucher.voucher_type || 'Sales'}" ACTION="Create">
+          <DATE>${(voucher.date || new Date().toISOString().slice(0,10)).replace(/-/g, '')}</DATE>
+          <NARRATION>${voucher.narration || ''}</NARRATION>
+          <VOUCHERTYPENAME>${voucher.voucher_type || 'Sales'}</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME>${voucher.party_ledger || ''}</PARTYLEDGERNAME>
+          <REFERENCE>${voucher.reference || ''}</REFERENCE>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME>${voucher.party_ledger || ''}</LEDGERNAME>
+            <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+            <AMOUNT>-${voucher.amount || 0}</AMOUNT>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME>Sales Account</LEDGERNAME>
+            <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+            <AMOUNT>${voucher.amount || 0}</AMOUNT>
+          </ALLLEDGERENTRIES.LIST>
+          ${itemsXml}
+        </VOUCHER>
+      </TALLYMESSAGE>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+    const response = await axios.post(TALLY_URL, voucherXml, {
+      headers: { 'Content-Type': 'text/xml' },
+      timeout: 15000
+    });
+    
+    const result = response.data;
+    const success = typeof result === 'string' && (result.includes('CREATED="1"') || result.includes('ALTERED="1"'));
+    
+    if (success) {
+      res.json({ success: true, message: 'Voucher created in Tally' });
+    } else {
+      res.json({ success: false, error: 'Failed to create voucher', details: result });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create Ledger in Tally
+router.post('/create-ledger', async (req, res) => {
+  try {
+    const connected = await pingTally();
+    if (!connected) {
+      return res.status(503).json({ success: false, error: 'Tally not connected' });
+    }
+    
+    const ledger = req.body;
+    const TALLY_URL = getActiveTallyUrl();
+    
+    // Build ledger XML
+    const ledgerXml = `
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Import</TALLYREQUEST>
+    <TYPE>Data</TYPE>
+    <ID>All Masters</ID>
+  </HEADER>
+  <BODY>
+    <DESC></DESC>
+    <DATA>
+      <TALLYMESSAGE>
+        <LEDGER NAME="${ledger.name || ''}" ACTION="Create">
+          <NAME>${ledger.name || ''}</NAME>
+          <PARENT>${ledger.group || 'Sundry Debtors'}</PARENT>
+          <ADDRESS.LIST>
+            <ADDRESS>${ledger.address || ''}</ADDRESS>
+          </ADDRESS.LIST>
+          <LEDGERPHONE>${ledger.phone || ''}</LEDGERPHONE>
+          <LEDGERMOBILE>${ledger.mobile || ''}</LEDGERMOBILE>
+          <EMAIL>${ledger.email || ''}</EMAIL>
+          <PARTYGSTIN>${ledger.gstin || ''}</PARTYGSTIN>
+          <GSTREGISTRATIONTYPE>${ledger.gst_type || 'Regular'}</GSTREGISTRATIONTYPE>
+          <LEDSTATENAME>${ledger.state || ''}</LEDSTATENAME>
+          <PINCODE>${ledger.pincode || ''}</PINCODE>
+        </LEDGER>
+      </TALLYMESSAGE>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+    const response = await axios.post(TALLY_URL, ledgerXml, {
+      headers: { 'Content-Type': 'text/xml' },
+      timeout: 15000
+    });
+    
+    const result = response.data;
+    const success = typeof result === 'string' && (result.includes('CREATED="1"') || result.includes('ALTERED="1"'));
+    
+    if (success) {
+      res.json({ success: true, message: 'Ledger created in Tally', name: ledger.name });
+    } else {
+      res.json({ success: false, error: 'Failed to create ledger', details: result });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

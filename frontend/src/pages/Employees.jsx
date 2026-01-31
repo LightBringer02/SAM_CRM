@@ -109,6 +109,30 @@ export default function Employees() {
   // Check if current user can manage employees
   const canManage = isAdminOrHigher();
 
+  // Check if a user is online (active within last 5 minutes)
+  const isUserOnline = (userId) => {
+    if (!userId) return false;
+    const lastActivity = localStorage.getItem(`user_activity_${userId}`);
+    if (!lastActivity) return false;
+    const timeDiff = Date.now() - parseInt(lastActivity, 10);
+    return timeDiff < 5 * 60 * 1000; // 5 minutes
+  };
+
+  // Get last seen time
+  const getLastSeen = (userId) => {
+    if (!userId) return null;
+    const lastActivity = localStorage.getItem(`user_activity_${userId}`);
+    if (!lastActivity) return null;
+    const date = new Date(parseInt(lastActivity, 10));
+    const now = new Date();
+    const diff = now - date;
+    
+    if (diff < 60000) return "Just now";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hr ago`;
+    return date.toLocaleDateString();
+  };
+
   // Load data on mount
   useEffect(() => {
     const loadedEmployees = getEmployeesFromStorage();
@@ -398,6 +422,7 @@ export default function Employees() {
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Name</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Status</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Department</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Designation</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Contact</th>
@@ -406,15 +431,35 @@ export default function Employees() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {employees.map(emp => (
+              {employees.map(emp => {
+                const online = isUserOnline(emp.userId);
+                const lastSeen = getLastSeen(emp.userId);
+                return (
                 <tr key={emp.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
-                        <User className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                      <div className="relative">
+                        <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+                          <User className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                        </div>
+                        {emp.userId && (
+                          <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${online ? 'bg-green-500' : 'bg-gray-400'}`} />
+                        )}
                       </div>
                       <span className="font-medium text-gray-900 dark:text-white">{emp.name}</span>
                     </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    {emp.userId ? (
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-full ${online ? 'bg-green-500' : 'bg-gray-400'}`} />
+                        <span className={`text-xs ${online ? 'text-green-600 dark:text-green-400' : 'text-gray-500'}`}>
+                          {online ? 'Online' : lastSeen || 'Offline'}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{emp.department || '-'}</td>
                   <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{emp.designation || '-'}</td>
@@ -456,7 +501,8 @@ export default function Employees() {
                     </td>
                   )}
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>

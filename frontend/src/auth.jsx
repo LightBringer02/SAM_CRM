@@ -85,6 +85,32 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // Track user activity - update every minute while logged in
+  useEffect(() => {
+    if (!user) return;
+    
+    // Update activity immediately
+    localStorage.setItem(`user_activity_${user.id}`, Date.now().toString());
+    
+    // Update activity every minute
+    const interval = setInterval(() => {
+      localStorage.setItem(`user_activity_${user.id}`, Date.now().toString());
+    }, 60000);
+    
+    // Update on page visibility change
+    const handleVisibility = () => {
+      if (!document.hidden && user) {
+        localStorage.setItem(`user_activity_${user.id}`, Date.now().toString());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [user]);
+
   const login = (emailOrUsername, password) => {
     const users = JSON.parse(localStorage.getItem("users") || "[]");
     const normalizedInput = emailOrUsername.toLowerCase().trim();
@@ -97,6 +123,8 @@ export function AuthProvider({ children }) {
       delete userWithoutPassword.password;
       setUser(userWithoutPassword);
       localStorage.setItem("currentUser", JSON.stringify(userWithoutPassword));
+      // Update user activity on login
+      localStorage.setItem(`user_activity_${foundUser.id}`, Date.now().toString());
       return { success: true, isNewUser: foundUser.isNewUser || false };
     }
 

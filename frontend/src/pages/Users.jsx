@@ -99,8 +99,9 @@ export default function Users() {
       return;
     }
 
+    // Admin passwords can only be reset by ROOT
     if (user.role === "admin" && !isRoot()) {
-      alert("Cannot reset admin password");
+      alert("Only ROOT can reset admin passwords");
       return;
     }
 
@@ -208,7 +209,15 @@ export default function Users() {
             </tr>
           </thead>
           <tbody>
-            {users.map((user, index) => (
+            {users
+              .filter(user => {
+                // If current user is not root, hide all root users from the list
+                if (!isRoot() && user.role === "root") {
+                  return false;
+                }
+                return true;
+              })
+              .map((user, index) => (
               <tr
                 key={user.id}
                 className={
@@ -257,7 +266,12 @@ export default function Users() {
                 </td>
                 <td className="px-4 py-3 text-center border-b border-gray-200">
                   <div className="flex items-center justify-center gap-2 flex-wrap">
-                    {user.role !== "admin" && user.id !== currentUser.id && (
+                    {/* Show Reset Password button: 
+                        - Root can reset anyone except themselves
+                        - Admin can reset non-admin, non-root users */}
+                    {user.id !== currentUser.id && (
+                      (isRoot() || (user.role !== "admin" && user.role !== "root"))
+                    ) && (
                       <button
                         onClick={() => handleResetUserPassword(user.id)}
                         className="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition"

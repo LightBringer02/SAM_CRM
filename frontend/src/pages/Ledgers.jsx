@@ -19,7 +19,12 @@ import {
   ChevronRight,
   Clock,
   MessageSquare,
-  Send
+  Send,
+  Plus,
+  Save,
+  X,
+  AlertCircle,
+  CheckCircle
 } from "lucide-react";
 
 // Card configuration for each ledger group
@@ -80,12 +85,25 @@ const LEDGER_CARDS = [
 
 // Format currency with Dr/Cr suffix
 function formatCurrency(amount, showDrCr = false) {
-  const num = parseFloat(amount) || 0;
+  // Parse the amount - handle string values with symbols
+  let num = parseFloat(amount);
+  if (isNaN(num)) num = 0;
+  
+  // If amount seems unreasonably large (likely in paise), divide by 100
+  // This handles cases where Tally returns amounts in paise
+  // Note: 1 Crore = 1,00,00,000 - if balance > 1000 Cr (10 billion paise), it's likely in paise
+  // Heuristic: values > 1 trillion are likely in paise
+  // Actually safer to NOT auto-divide as it may break valid large values
+  
   const isNegative = num < 0;
-  const formatted = Math.abs(num).toLocaleString('en-IN', { 
+  const absNum = Math.abs(num);
+  
+  // Format in Indian number system
+  const formatted = absNum.toLocaleString('en-IN', { 
     minimumFractionDigits: 2, 
     maximumFractionDigits: 2 
   });
+  
   if (showDrCr) {
     return isNegative ? `₹${formatted} Cr` : `₹${formatted} Dr`;
   }
@@ -132,6 +150,13 @@ function LedgerSummaryCards() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedLedger, setSelectedLedger] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [newLedger, setNewLedger] = useState({
+    name: "", group: "Sundry Debtors", address: "", phone: "", email: "", 
+    gstin: "", gst_type: "Regular", state: "", pincode: ""
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -153,6 +178,31 @@ function LedgerSummaryCards() {
 
   const handleSelectRecentLedger = (ledger) => {
     setSelectedLedger(ledger);
+  };
+
+  const resetNewLedger = () => {
+    setNewLedger({ name: "", group: "Sundry Debtors", address: "", phone: "", email: "", gstin: "", gst_type: "Regular", state: "", pincode: "" });
+  };
+
+  const handleCreateLedger = async () => {
+    if (!newLedger.name.trim()) { setMessage({ type: "error", text: "Ledger name is required" }); return; }
+    setCreateLoading(true);
+    try {
+      const res = await axios.post('/api/tally/create-ledger', newLedger);
+      if (res.data.success) {
+        setMessage({ type: "success", text: `Ledger "${newLedger.name}" created in Tally!` });
+        setShowCreateModal(false);
+        resetNewLedger();
+        fetchSummary();
+      } else {
+        setMessage({ type: "error", text: res.data.error || "Failed to create ledger" });
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: "Failed to create ledger: " + (err.response?.data?.error || err.message) });
+    } finally {
+      setCreateLoading(false);
+      setTimeout(() => setMessage(null), 5000);
+    }
   };
 
   if (loading) {
@@ -180,15 +230,26 @@ function LedgerSummaryCards() {
 
   return (
     <div className="space-y-6">
+      {message && <div className={`p-3 rounded-lg flex items-center gap-2 ${message.type === "error" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{message.type === "error" ? <AlertCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}{message.text}</div>}
+      
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ledgers</h1>
-        <button 
-          onClick={fetchSummary}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/40 transition"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+          >
+            <Plus className="w-4 h-4" />
+            Add to Tally
+          </button>
+          <button 
+            onClick={fetchSummary}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/40 transition"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Recently Accessed */}
@@ -251,6 +312,39 @@ function LedgerSummaryCards() {
           ledger={selectedLedger} 
           onClose={() => setSelectedLedger(null)} 
         />
+      )}
+
+      {/* Create Ledger Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add Ledger to Tally</h2>
+              <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2"><label className="block text-sm font-medium mb-1">Ledger Name *</label><input type="text" value={newLedger.name} onChange={(e) => setNewLedger({...newLedger, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Party/Company name" /></div>
+                <div><label className="block text-sm font-medium mb-1">Group</label><select value={newLedger.group} onChange={(e) => setNewLedger({...newLedger, group: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"><option value="Sundry Debtors">Sundry Debtors</option><option value="Sundry Creditors">Sundry Creditors</option><option value="Bank Accounts">Bank Accounts</option><option value="Cash-in-Hand">Cash-in-Hand</option></select></div>
+                <div><label className="block text-sm font-medium mb-1">GST Type</label><select value={newLedger.gst_type} onChange={(e) => setNewLedger({...newLedger, gst_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"><option value="Regular">Regular</option><option value="Composition">Composition</option><option value="Consumer">Consumer</option><option value="Unregistered">Unregistered</option></select></div>
+              </div>
+              <div><label className="block text-sm font-medium mb-1">GSTIN</label><input type="text" value={newLedger.gstin} onChange={(e) => setNewLedger({...newLedger, gstin: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="GSTIN number" /></div>
+              <div><label className="block text-sm font-medium mb-1">Address</label><textarea value={newLedger.address} onChange={(e) => setNewLedger({...newLedger, address: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" rows={2} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium mb-1">Phone</label><input type="tel" value={newLedger.phone} onChange={(e) => setNewLedger({...newLedger, phone: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+                <div><label className="block text-sm font-medium mb-1">Email</label><input type="email" value={newLedger.email} onChange={(e) => setNewLedger({...newLedger, email: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium mb-1">State</label><input type="text" value={newLedger.state} onChange={(e) => setNewLedger({...newLedger, state: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+                <div><label className="block text-sm font-medium mb-1">Pincode</label><input type="text" value={newLedger.pincode} onChange={(e) => setNewLedger({...newLedger, pincode: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">Cancel</button>
+              <button onClick={handleCreateLedger} disabled={createLoading} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" />{createLoading ? 'Creating...' : 'Create in Tally'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -429,8 +523,8 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
   useEffect(() => {
     const fetchVoucherCount = async () => {
       try {
-        // Fetch all voucher types to get count
-        const types = ['sales', 'purchase', 'receipt', 'payment'];
+        // Fetch all voucher types to get count - include new types
+        const types = ['sales', 'purchase', 'receipt', 'payment', 'contra', 'journal', 'credit_note', 'debit_note'];
         let totalCount = 0;
         
         for (const type of types) {
@@ -464,7 +558,25 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
     const buyerGstin = voucher.party_gstin || '';
     const supplierState = getStateCode(supplierGstin);
     const buyerState = getStateCode(buyerGstin);
-    const isInterState = supplierGstin && buyerGstin && supplierState && buyerState && supplierState !== buyerState;
+    
+    // FIXED: Handle unregistered buyers (no GSTIN) - use place of supply or state
+    let isInterState = false;
+    if (supplierGstin && buyerGstin && supplierState && buyerState) {
+      // Both parties registered: compare GSTIN state codes
+      isInterState = supplierState !== buyerState;
+    } else if (supplierGstin && supplierState) {
+      // Buyer unregistered: check place of supply or state name
+      const placeOfSupply = voucher.place_of_supply || '';
+      const partyState = voucher.party_state || voucher.buyer_state || '';
+      
+      // Try to extract state code from place of supply
+      if (placeOfSupply) {
+        const codeMatch = placeOfSupply.match(/(\d{2})/);
+        if (codeMatch && codeMatch[1] !== supplierState) {
+          isInterState = true;
+        }
+      }
+    }
     
     voucher.items.forEach(item => {
       const qty = Math.abs(Number(item.qty) || 0);
@@ -484,9 +596,14 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
       sgstPercent = sgstPercent !== undefined ? sgstPercent : 0;
       igstPercent = igstPercent !== undefined ? igstPercent : 0;
       
+      // Calculate combined GST for IGST (CGST + SGST = IGST)
+      const combinedGstPercent = cgstPercent + sgstPercent;
+      
       let lineCgst = 0, lineSgst = 0, lineIgst = 0;
-      if (isInterState && igstPercent > 0) {
-        lineIgst = (lineAmount * igstPercent) / 100;
+      if (isInterState) {
+        // For inter-state, use IGST (or combine CGST+SGST if IGST not specified)
+        const effectiveIgstPercent = igstPercent > 0 ? igstPercent : combinedGstPercent;
+        lineIgst = (lineAmount * effectiveIgstPercent) / 100;
       } else if (!isInterState && (cgstPercent > 0 || sgstPercent > 0)) {
         lineCgst = (lineAmount * cgstPercent) / 100;
         lineSgst = (lineAmount * sgstPercent) / 100;
@@ -506,22 +623,28 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
     if (vouchersFetched) return;
     setLoadingVouchers(true);
     try {
-      const types = ['sales', 'purchase', 'receipt', 'payment'];
-      const allVouchers = [];
+      // Fetch ALL vouchers without type filter to include all voucher types
+      // (Sales, Purchase, Receipt, Payment, Contra, Journal, Credit Note, Debit Note, Cash, Stock Journal, etc.)
+      const res = await axios.get(`/api/vouchers`);
+      const voucherData = Array.isArray(res.data) ? res.data : (res.data.vouchers || []);
       
-      for (const type of types) {
-        const res = await axios.get(`/api/vouchers?type=${type}`);
-        const voucherData = Array.isArray(res.data) ? res.data : (res.data.vouchers || []);
-        const filtered = voucherData.filter(v => 
-          (v.party_name || v.party_ledger || '').toLowerCase() === ledger.name.toLowerCase()
+      // Filter by party name (ledger name)
+      const ledgerNameLower = ledger.name.toLowerCase();
+      const filtered = voucherData.filter(v => {
+        const partyName = (v.party_name || v.party_ledger || v.party || '').toLowerCase();
+        // Also check ledger entries for this party
+        const ledgerEntries = v.ledger_entries || v.ledgers || [];
+        const hasLedgerEntry = ledgerEntries.some(le => 
+          (le.name || le.ledger_name || '').toLowerCase() === ledgerNameLower
         );
-        // Compute GST totals for each voucher
-        const withGst = filtered.map(v => computeVoucherGstTotal({ ...v, voucher_type: v.voucher_type || type }));
-        allVouchers.push(...withGst);
-      }
+        return partyName === ledgerNameLower || hasLedgerEntry;
+      });
       
-      allVouchers.sort((a, b) => new Date(b.date) - new Date(a.date));
-      setVouchers(allVouchers);
+      // Compute GST totals for each voucher
+      const withGst = filtered.map(v => computeVoucherGstTotal(v));
+      
+      withGst.sort((a, b) => new Date(b.date) - new Date(a.date));
+      setVouchers(withGst);
       setVouchersFetched(true);
     } catch (err) {
       console.error('Failed to fetch vouchers:', err);
@@ -533,6 +656,9 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
   // Calculate totals - correct accounting logic using filtered vouchers
   // For Debtors: Sales = Debit, Receipt = Credit
   // For Creditors: Purchase = Credit, Payment = Debit
+  // Debit Note = Debit (increases receivable), Credit Note = Credit (decreases receivable)
+  // Journal entries need to be analyzed per ledger entry for proper Dr/Cr
+  // Contra entries typically don't affect party ledgers
   // Use totalAmount (with GST) if available, otherwise fall back to amount
   const getVoucherAmount = (v) => {
     // Priority: totalAmount > ledger_total > grand_total > amount
@@ -541,15 +667,21 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
 
   const debitTotal = filteredVouchers
     .filter(v => {
-      const type = (v.voucher_type || '').toLowerCase();
-      return type === 'sales' || type === 'payment';
+      const type = (v.voucher_type || '').toLowerCase().replace(/_/g, ' ');
+      // Sales, Payment, Debit Note, Stock Journal are debits
+      return type === 'sales' || type === 'payment' || 
+             type === 'debit note' || type === 'debitnote' ||
+             type === 'stock journal' || type.includes('debit');
     })
     .reduce((sum, v) => sum + getVoucherAmount(v), 0);
   
   const creditTotal = filteredVouchers
     .filter(v => {
-      const type = (v.voucher_type || '').toLowerCase();
-      return type === 'purchase' || type === 'receipt';
+      const type = (v.voucher_type || '').toLowerCase().replace(/_/g, ' ');
+      // Purchase, Receipt, Credit Note are credits
+      return type === 'purchase' || type === 'receipt' || 
+             type === 'credit note' || type === 'creditnote' ||
+             type.includes('credit');
     })
     .reduce((sum, v) => sum + getVoucherAmount(v), 0);
 
@@ -766,9 +898,35 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                       {filteredVouchers.map((v, idx) => {
-                        // Correct debit/credit: Sales & Payment = Debit, Purchase & Receipt = Credit
-                        const voucherType = (v.voucher_type || '').toLowerCase();
-                        const isDebit = voucherType === 'sales' || voucherType === 'payment';
+                        // Correct debit/credit: Sales, Payment, Debit Note = Debit; Purchase, Receipt, Credit Note = Credit
+                        const voucherType = (v.voucher_type || '').toLowerCase().replace(/_/g, ' ');
+                        const isDebit = voucherType === 'sales' || voucherType === 'payment' || 
+                                        voucherType === 'debit note' || voucherType === 'debitnote' ||
+                                        voucherType === 'stock journal';
+                        
+                        // Get voucher type color
+                        const getTypeColor = (type) => {
+                          const t = type.toLowerCase().replace(/_/g, ' ');
+                          if (t === 'sales') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+                          if (t === 'purchase') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+                          if (t === 'receipt') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+                          if (t === 'payment') return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+                          if (t === 'contra') return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+                          if (t === 'journal') return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
+                          if (t === 'credit note' || t === 'creditnote') return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400';
+                          if (t === 'debit note' || t === 'debitnote') return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+                          if (t.includes('cash')) return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400';
+                          if (t.includes('stock')) return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400';
+                          if (t.includes('delivery') || t.includes('note')) return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400';
+                          return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
+                        };
+                        
+                        // Format voucher type for display
+                        const formatVoucherType = (type) => {
+                          if (!type) return '-';
+                          return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        };
+                        
                         return (
                           <tr 
                             key={idx} 
@@ -782,13 +940,8 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
                               {v.date ? new Date(v.date).toLocaleDateString('en-IN') : '-'}
                             </td>
                             <td className="px-3 py-2">
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                v.voucher_type === 'sales' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                v.voucher_type === 'purchase' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                                v.voucher_type === 'receipt' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                                'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                              }`}>
-                                {v.voucher_type?.charAt(0).toUpperCase() + v.voucher_type?.slice(1)}
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${getTypeColor(v.voucher_type || '')}`}>
+                                {formatVoucherType(v.voucher_type)}
                               </span>
                             </td>
                             <td className="px-3 py-2 text-gray-900 dark:text-white">{v.voucher_number || '-'}</td>

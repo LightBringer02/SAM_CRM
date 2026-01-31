@@ -50,6 +50,8 @@ export default function BackupManagement() {
     intervalHours: 24,
     backupType: 'full'
   });
+  const [uploadFile, setUploadFile] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // Get auth headers
   const getHeaders = () => {
@@ -185,6 +187,65 @@ export default function BackupManagement() {
     } catch (err) {
       setError(err.response?.data?.error || err.message);
     } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle file upload for restore
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.name.endsWith('.json')) {
+        setError('Please upload a valid JSON backup file');
+        return;
+      }
+      setUploadFile(file);
+      setShowUploadModal(true);
+    }
+  };
+
+  // Restore from uploaded file
+  const restoreFromUpload = async () => {
+    if (!uploadFile) return;
+    
+    setActionLoading(true);
+    setShowUploadModal(false);
+    
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const backupData = JSON.parse(e.target.result);
+          
+          // Validate backup structure
+          if (!backupData.tables && !backupData.data) {
+            setError('Invalid backup file format');
+            setActionLoading(false);
+            return;
+          }
+          
+          // Send to API for restore
+          const res = await axios.post(`${API_BASE}/backup/restore-upload`, {
+            backupData,
+            createBackupFirst: true
+          }, { headers: getHeaders() });
+          
+          setSuccess(`Restore from upload completed: ${res.data.data?.totalRows || 'unknown'} rows restored`);
+          await fetchBackups();
+        } catch (parseErr) {
+          setError('Failed to parse backup file: ' + parseErr.message);
+        } finally {
+          setActionLoading(false);
+          setUploadFile(null);
+        }
+      };
+      reader.onerror = () => {
+        setError('Failed to read file');
+        setActionLoading(false);
+      };
+      reader.readAsText(uploadFile);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message);
       setActionLoading(false);
     }
   };
@@ -337,6 +398,19 @@ export default function BackupManagement() {
           >
             <Settings className="w-4 h-4" /> Schedule Settings
           </button>
+
+          <div className="border-l border-gray-200 dark:border-gray-700 mx-2" />
+
+          {/* Upload Restore Button */}
+          <label className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 cursor-pointer flex items-center gap-2">
+            <Upload className="w-4 h-4" /> Restore from File
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </label>
         </div>
       </div>
 
@@ -569,6 +643,48 @@ export default function BackupManagement() {
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
               >
                 Save Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Restore Confirmation Modal */}
+      {showUploadModal && uploadFile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+              Restore from Uploaded File
+            </h3>
+            
+            <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Selected File:</p>
+              <p className="font-medium text-gray-900 dark:text-white">{uploadFile.name}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Size: {(uploadFile.size / 1024).toFixed(2)} KB
+              </p>
+            </div>
+
+            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+              <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
+                <AlertTriangle className="w-4 h-4" />
+                <span className="text-sm">This will replace all current data with the backup data. A backup of current data will be created first.</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowUploadModal(false); setUploadFile(null); }}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={restoreFromUpload}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" /> Restore Now
               </button>
             </div>
           </div>

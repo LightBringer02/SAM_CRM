@@ -121,11 +121,22 @@ function applyVoucherFilters(vouchers, query) {
     vouchers = vouchers.filter(v => v.date === today);
   }
   
-  // Voucher type filter (case-insensitive)
+  // Voucher type filter (case-insensitive, handle underscores vs spaces)
   if (type && type.toLowerCase() !== 'all') {
+    // Normalize type: convert underscores to spaces for matching
+    const normalizedType = type.toLowerCase().replace(/_/g, ' ');
+    // Also create underscore version for matching
+    const underscoreType = type.toLowerCase().replace(/ /g, '_');
+    
     vouchers = vouchers.filter(v => {
       const vt = (v.voucher_type || '').toLowerCase();
-      return vt.includes(type.toLowerCase());
+      const vtNormalized = vt.replace(/_/g, ' ').replace(/ +/g, ' ').trim();
+      const vtUnderscore = vt.replace(/ /g, '_');
+      
+      // Match against any variant
+      return vtNormalized.includes(normalizedType) || 
+             vtUnderscore.includes(underscoreType) ||
+             vt.includes(type.toLowerCase());
     });
   }
   

@@ -47,7 +47,7 @@ export default function Navbar() {
   };
 
   // Trigger actual sync with Tally and database
-  // Uses /api/sync/navbar-sync for all users (no admin required)
+  // Uses /api/sync/navbar-sync for all users (admins get full sync)
   const triggerSync = async (isAutoSync = false) => {
     setSyncStatus("syncing");
     if (!isAutoSync) setSyncMessage("");
@@ -66,7 +66,12 @@ export default function Navbar() {
         setSyncStatus("success");
         setLastSync(new Date().toISOString());
         setTallyStatus(data.tallyConnected ? "live" : "offline");
-        setSyncMessage(isAutoSync ? "Auto-synced" : (data.message || "Sync completed"));
+        // Show database sync status for admins
+        let message = data.message || "Sync completed";
+        if (data.dataSynced) {
+          message = "✓ Database synced";
+        }
+        setSyncMessage(isAutoSync ? "Auto-synced" : message);
         // Only reload on manual sync
         if (!isAutoSync) {
           setTimeout(() => {

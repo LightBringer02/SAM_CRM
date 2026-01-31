@@ -10,7 +10,9 @@ import Ledgers from "../pages/Ledgers";
 import Communication from "../pages/Communication";
 import Orders from "../pages/Orders";
 import Users from "../pages/Users";
-import Employees from "../pages/Employees";
+import Employees from "../pages/EmployeesNew";
+import EmployeeAttendance from "../pages/EmployeeAttendance";
+import EmployeeManagement from "../pages/EmployeeManagement";
 import Logs from "../pages/Logs";
 import Todos from "../pages/Todos";
 import Reports from "../pages/Reports";
@@ -143,6 +145,22 @@ export default function AppRouter() {
           element={
             <ProtectedLayout>
               <Employees />
+            </ProtectedLayout>
+          }
+        />
+        <Route
+          path="/employees/attendance"
+          element={
+            <ProtectedLayout>
+              <EmployeeAttendance />
+            </ProtectedLayout>
+          }
+        />
+        <Route
+          path="/employees/management"
+          element={
+            <ProtectedLayout>
+              <EmployeeManagement />
             </ProtectedLayout>
           }
         />

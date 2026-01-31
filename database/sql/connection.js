@@ -25,7 +25,7 @@ const DEFAULT_DB_CONFIG = {
   host: process.env.DATABASE_HOST || 'localhost',
   port: parseInt(process.env.DATABASE_PORT) || 5432,
   database: process.env.DATABASE_NAME || 'samcrm',
-  user: process.env.DATABASE_USER || 'admin',
+  user: process.env.DATABASE_USER || 'postgres',
   password: process.env.DATABASE_PASSWORD || 'root',
   max: 20, // Maximum pool connections (update if needed)
   idleTimeoutMillis: 30000,

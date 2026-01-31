@@ -630,9 +630,9 @@ router.post('/backup', async (req, res) => {
 
 /**
  * POST /api/sync/navbar-sync
- * Lightweight sync for navbar button - NO AUTHENTICATION REQUIRED
- * Only checks Tally connection and returns status - does NOT do full sync
- * Full sync should be done via /api/sync/trigger (admin only)
+ * Enhanced sync for navbar button - NO AUTHENTICATION REQUIRED
+ * Checks Tally connection AND syncs data to database if Tally is online
+ * For admins: Does full sync. For regular users: Connection check only
  */
 router.post('/navbar-sync', async (req, res) => {
   try {
@@ -643,11 +643,35 @@ router.post('/navbar-sync', async (req, res) => {
     
     let tallyConnected = false;
     let syncMessage = '';
+    let dataSynced = false;
+    
+    // Check user role from headers (admin users get full sync)
+    const userRole = req.headers['x-user-role'] || 'user';
+    const isAdminUser = ['root', 'admin'].includes(userRole.toLowerCase());
     
     if (tallySyncService) {
-      // Just check connection - don't do full sync (too heavy)
+      // Check connection first
       tallyConnected = await tallySyncService.checkTallyConnection();
-      syncMessage = tallyConnected ? 'Tally is connected and live' : 'Tally is offline - using cached data';
+      
+      if (tallyConnected && isAdminUser) {
+        // Admin users get full sync when Tally is connected
+        try {
+          console.log('Navbar sync: Starting data sync for admin user...');
+          const syncResult = await tallySyncService.fullSync();
+          dataSynced = syncResult.tallyConnected || false;
+          syncMessage = dataSynced 
+            ? 'Tally connected - Data synced to database' 
+            : 'Tally connected - ' + (syncResult.errors?.join(', ') || 'Sync completed with warnings');
+        } catch (syncErr) {
+          console.error('Navbar sync data error:', syncErr.message);
+          syncMessage = 'Tally connected - Sync error: ' + syncErr.message;
+          dataSynced = false;
+        }
+      } else if (tallyConnected) {
+        syncMessage = 'Tally is connected and live';
+      } else {
+        syncMessage = 'Tally is offline - using cached data';
+      }
     } else {
       // Fallback Tally check
       try {
@@ -670,6 +694,7 @@ router.post('/navbar-sync', async (req, res) => {
     lastSyncResult = {
       ...lastSyncResult,
       tallyConnected,
+      dataSynced,
       timestamp: new Date().toISOString()
     };
     
@@ -677,6 +702,7 @@ router.post('/navbar-sync', async (req, res) => {
       success: true,
       message: syncMessage,
       tallyConnected,
+      dataSynced,
       timestamp: new Date().toISOString()
     });
     
@@ -686,7 +712,8 @@ router.post('/navbar-sync', async (req, res) => {
       success: false,
       error: 'Status check failed',
       details: err.message,
-      tallyConnected: false
+      tallyConnected: false,
+      dataSynced: false
     });
   }
 });

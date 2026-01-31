@@ -399,6 +399,184 @@ function parseVoucher(voucher) {
   const companyGstin = getText(voucher, 'CMPGSTIN');
 
   // ============================================================
+  // ADDITIONAL INVOICE FIELDS (for complete Tax Invoice details)
+  // ============================================================
+  
+  // Extract from nested INVOICEDELNOTES.LIST (Delivery Notes)
+  let invoiceDelNotes = voucher['INVOICEDELNOTES.LIST'];
+  if (invoiceDelNotes) {
+    invoiceDelNotes = Array.isArray(invoiceDelNotes) ? invoiceDelNotes[0] : invoiceDelNotes;
+  }
+  
+  // Extract from nested INVOICEORDERLIST.LIST (Order Details)
+  let invoiceOrderList = voucher['INVOICEORDERLIST.LIST'];
+  if (invoiceOrderList) {
+    invoiceOrderList = Array.isArray(invoiceOrderList) ? invoiceOrderList[0] : invoiceOrderList;
+  }
+  
+  // Extract from nested BASICORDERTERMS.LIST (Terms)
+  let basicOrderTerms = voucher['BASICORDERTERMS.LIST'];
+  if (basicOrderTerms) {
+    basicOrderTerms = Array.isArray(basicOrderTerms) ? basicOrderTerms : [basicOrderTerms];
+    // Join all terms if multiple
+    const termsArr = basicOrderTerms.map(t => getText(t, 'BASICORDERTERMS')).filter(Boolean);
+    basicOrderTerms = termsArr.join(', ');
+  } else {
+    basicOrderTerms = '';
+  }
+  
+  // Delivery Note - from INVOICEDELNOTES.LIST or direct fields
+  const deliveryNote = (invoiceDelNotes ? getText(invoiceDelNotes, 'BASICSHIPDELIVERYNOTE') : '') ||
+    getText(voucher, 'BASICSHIPDELIVERYNOTE') ||
+    getText(voucher, 'DELIVERYNOTE') || 
+    getText(voucher, 'BASICDELIVERYNOTE') || 
+    getText(voucher, 'CURRBASICSHIPDELIVERYNOTE') || '';
+  
+  // Delivery Note Date - from INVOICEDELNOTES.LIST
+  const deliveryNoteDate = parseTallyDate(
+    (invoiceDelNotes ? getText(invoiceDelNotes, 'BASICSHIPPINGDATE') : '') ||
+    getText(voucher, 'BASICSHIPPINGDATE') ||
+    getText(voucher, 'DELIVERYNOTEDATE') || 
+    getText(voucher, 'BASICDELIVERYNOTEDATE') ||
+    getText(voucher, 'INVDELIVERYDATE') || ''
+  );
+  
+  // Mode/Terms of Payment - BASICDUEDATEOFPYMT contains this
+  const modeOfPayment = getText(voucher, 'BASICDUEDATEOFPYMT') ||
+    getText(voucher, 'MODEOFPAYMENT') || 
+    getText(voucher, 'TERMSOFPAYMENT') || 
+    getText(voucher, 'PAYMENTTERMS') ||
+    getText(voucher, 'BASICTERMSOFPAYMENT') || '';
+  
+  // Reference No & Date - REFERENCE field at voucher level
+  const referenceNo = getText(voucher, 'REFERENCE') || 
+    getText(voucher, 'REFERENCENO') || 
+    getText(voucher, 'REFNUMBER') || '';
+  const referenceDate = parseTallyDate(getText(voucher, 'REFERENCEDATE') || 
+    getText(voucher, 'REFDATE') || '');
+  
+  // Other References - BASICORDERREF contains buyer's reference/other ref
+  const otherReferences = getText(voucher, 'BASICORDERREF') ||
+    getText(voucher, 'OTHERREFERENCES') || 
+    getText(voucher, 'OTHERREF') ||
+    getText(voucher, 'REMARKS') || '';
+  
+  // Buyer's Order No & Date - from INVOICEORDERLIST.LIST or direct fields
+  const buyersOrderNo = (invoiceOrderList ? getText(invoiceOrderList, 'BASICPURCHASEORDERNO') : '') ||
+    getText(voucher, 'BASICPURCHASEORDERNO') ||
+    getText(voucher, 'CURRBASICPURCHASEORDERNO') ||
+    getText(voucher, 'ORDERNUMBER') || 
+    getText(voucher, 'BASICORDERNUM') || 
+    getText(voucher, 'BUYERSORDERNUM') ||
+    getText(voucher, 'PARTYORDERNUM') || '';
+  const buyersOrderDate = parseTallyDate(
+    (invoiceOrderList ? getText(invoiceOrderList, 'BASICORDERDATE') : '') ||
+    getText(voucher, 'BASICORDERDATE') ||
+    getText(voucher, 'PARTYORDERDATE') ||
+    getText(voucher, 'ORDERDATE') || 
+    getText(voucher, 'BUYERSORDERDATE') || ''
+  );
+  
+  // Dispatch Doc No - BASICSHIPDOCUMENTNO
+  const dispatchDocNo = getText(voucher, 'BASICSHIPDOCUMENTNO') ||
+    getText(voucher, 'DISPATCHDOCNO') || 
+    getText(voucher, 'DISPATHDOCNUM') || 
+    getText(voucher, 'BASICDISPATCHDOCNO') ||
+    getText(voucher, 'DISPATCHNUMBER') || '';
+  
+  // Dispatched Through - BASICSHIPPEDBY contains transport mode
+  const dispatchedThrough = getText(voucher, 'BASICSHIPPEDBY') ||
+    getText(voucher, 'DISPATCHEDTHROUGH') || 
+    getText(voucher, 'BASICDISPATCHEDTHROUGH') || 
+    getText(voucher, 'TRANSPORTERNAME') ||
+    getText(voucher, 'EICHECKPOST') ||
+    getText(voucher, 'CARRIERNAME') || '';
+  
+  // Destination - BASICFINALDESTINATION
+  const destination = getText(voucher, 'BASICFINALDESTINATION') ||
+    getText(voucher, 'DESTINATION') || 
+    getText(voucher, 'BASICDESTINATION') ||
+    getText(voucher, 'VATDESTINATIONPLACE') ||
+    getText(voucher, 'SHIPTOPLACE') || '';
+  
+  // Terms of Delivery - from BASICORDERTERMS.LIST
+  const termsOfDelivery = basicOrderTerms ||
+    getText(voucher, 'TERMSOFDELIVERY') || 
+    getText(voucher, 'BASICTERMSOFDELIVERY') ||
+    getText(voucher, 'DELIVERYTERMS') || '';
+  
+  // Vehicle Number - BASICSHIPVESSELNO contains this
+  const vehicleNumber = getText(voucher, 'BASICSHIPVESSELNO') ||
+    getText(voucher, 'VEHICLENUMBER') || 
+    getText(voucher, 'BASICVEHICLENUMBER') ||
+    getText(voucher, 'GOODSVEHICLENUMBER') ||
+    getText(voucher, 'VATVEHICLENO') || '';
+  
+  // Bill of Lading No
+  const billOfLadingNo = getText(voucher, 'BILLOFLADINGNO') || '';
+  
+  // E-Way Bill Number
+  const ewayBillNo = getText(voucher, 'EWAYBILLNO') || 
+    getText(voucher, 'BASICEWAYBILLNO') ||
+    getText(voucher, 'TEMPGSTEWAYBILLNUMBER') ||
+    getText(voucher, 'VATWAYBILLNUMBER') || '';
+  
+  // Dispatch From details
+  const dispatchFromName = getText(voucher, 'DISPATCHFROMNAME') || '';
+  const dispatchFromState = getText(voucher, 'DISPATCHFROMSTATENAME') || '';
+  const dispatchFromPincode = getText(voucher, 'DISPATCHFROMPINCODE') || '';
+  const dispatchFromPlace = getText(voucher, 'DISPATCHFROMPLACE') || '';
+  let dispatchFromAddress = '';
+  const dispatchAddrList = voucher['DISPATCHFROMADDRESS.LIST'];
+  if (dispatchAddrList) {
+    const addrArr = Array.isArray(dispatchAddrList) ? dispatchAddrList : [dispatchAddrList];
+    dispatchFromAddress = addrArr.map(a => getText(a, 'DISPATCHFROMADDRESS')).filter(Boolean).join(', ');
+  }
+  
+  // Consignee (Ship to) details - may differ from Buyer (Bill to)
+  const consigneeName = getText(voucher, 'GSTCONSIGNEENAME') ||
+    getText(voucher, 'GSTCONSIGNEEMAILINGNAME') ||
+    getText(voucher, 'CONSIGNEEMAILINGNAME') ||
+    getText(voucher, 'BASICSHIPTONAME') || 
+    getText(voucher, 'CONSIGNEENAME') || 
+    getText(voucher, 'SHIPPEDTOPARTY') || '';
+  const consigneeAddress = extractAddress(voucher, 'BASICSHIPTOADDRESS', 'CONSIGNEEADDRESS', 'SHIPPEDTOADDRESS') || '';
+  const consigneeGstin = getText(voucher, 'GSTCONSIGNEEGSTIN') ||
+    getText(voucher, 'CONSIGNEEGSTIN') ||
+    getText(voucher, 'BASICSHIPTOGSTIN') || '';
+  const consigneeState = getText(voucher, 'GSTCONSIGNEESTATE') ||
+    getText(voucher, 'CONSIGNEESTATENAME') || 
+    getText(voucher, 'BASICSHIPTOSTATE') || '';
+  const consigneeStateCode = getText(voucher, 'CONSIGNEESTATECODE') || 
+    getText(voucher, 'BASICSHIPTOSTATECODE') || '';
+  const consigneePincode = getText(voucher, 'GSTCONSIGNEEPINCODE') ||
+    getText(voucher, 'CONSIGNEEPINCODE') || '';
+  
+  // Buyer (Bill to) details
+  const buyerName = getText(voucher, 'GSTBUYERNAME') ||
+    getText(voucher, 'GSTBUYERMAILINGNAME') ||
+    getText(voucher, 'BASICBUYERNAME') || 
+    getText(voucher, 'BILLTOPARTY') || 
+    getText(voucher, 'PARTYMAILINGNAME') ||
+    party || '';
+  const buyerAddress = extractAddress(voucher, 'BASICBUYERADDRESS', 'BILLTOADDRESS', 'PARTYADDRESS') || partyAddress || '';
+  const buyerGstin = getText(voucher, 'GSTBUYERGSTIN') ||
+    getText(voucher, 'BASICBUYERGSTIN') || 
+    getText(voucher, 'BILLTOGSTIN') || 
+    partyGstin || '';
+  const buyerState = getText(voucher, 'GSTBUYERSTATE') ||
+    getText(voucher, 'BUYERSTATENAME') || 
+    getText(voucher, 'BASICBUYERSTATE') || 
+    partyState || '';
+  const buyerStateCode = getText(voucher, 'BUYERSTATECODE') || 
+    getText(voucher, 'BASICBUYERSTATECODE') || '';
+  const buyerPincode = getText(voucher, 'GSTBUYERPINCODE') ||
+    getText(voucher, 'PARTYPINCODE') || '';
+  
+  // Check if buyer is registered (has valid GSTIN)
+  const isBuyerRegistered = buyerGstin && buyerGstin.length >= 15;
+
+  // ============================================================
   // FIXED: Collect all inventory entries
   // ============================================================
 
@@ -623,6 +801,43 @@ function parseVoucher(voucher) {
     SUPPLIERINVOICENO: supplierInvoiceNo,
     BASICINVOICENO: basicInvoiceNo,
     BASICSHIPPINGINVOICENO: basicShippingInvoiceNo,
+    // Additional invoice details
+    delivery_note: deliveryNote,
+    mode_of_payment: modeOfPayment,
+    reference_no: referenceNo,
+    reference_date: referenceDate,
+    other_references: otherReferences,
+    buyers_order_no: buyersOrderNo,
+    buyers_order_date: buyersOrderDate,
+    dispatch_doc_no: dispatchDocNo,
+    delivery_note_date: deliveryNoteDate,
+    dispatched_through: dispatchedThrough,
+    destination: destination,
+    terms_of_delivery: termsOfDelivery,
+    vehicle_number: vehicleNumber,
+    bill_of_lading_no: billOfLadingNo,
+    eway_bill_no: ewayBillNo,
+    // Dispatch From details
+    dispatch_from_name: dispatchFromName,
+    dispatch_from_state: dispatchFromState,
+    dispatch_from_pincode: dispatchFromPincode,
+    dispatch_from_place: dispatchFromPlace,
+    dispatch_from_address: dispatchFromAddress,
+    // Consignee (Ship to) details
+    consignee_name: consigneeName,
+    consignee_address: consigneeAddress,
+    consignee_gstin: consigneeGstin,
+    consignee_state: consigneeState,
+    consignee_state_code: consigneeStateCode,
+    consignee_pincode: consigneePincode,
+    // Buyer (Bill to) details
+    buyer_name: buyerName,
+    buyer_address: buyerAddress,
+    buyer_gstin: buyerGstin,
+    buyer_state: buyerState,
+    buyer_state_code: buyerStateCode,
+    buyer_pincode: buyerPincode,
+    is_buyer_registered: isBuyerRegistered,
     raw: voucher
   };
 }

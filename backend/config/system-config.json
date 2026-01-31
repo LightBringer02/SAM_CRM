@@ -11,9 +11,9 @@
     "maxAdmins": 1,
     "maxTotalUsers": 5
   },
-  "backendMode": "LIVE",
+  "backendMode": "LOCAL",
   "liveServerUrl": "https://lee-pirates-destinations-necessarily.trycloudflare.com",
   "serviceEnabled": true,
-  "lastUpdated": "2026-01-29T18:11:39.186Z",
+  "lastUpdated": "2026-01-31T06:04:45.775Z",
   "updatedBy": "0"
 }

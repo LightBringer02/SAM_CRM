@@ -1,220 +1,281 @@
 import { useAuth } from "../auth";
 import { useState, useEffect } from "react";
-import { FileText, Edit3, Trash2, Clock, ChevronRight, Plus } from "lucide-react";
+import { 
+  FileText, Edit3, Trash2, Clock, ChevronRight, Plus, TrendingUp, TrendingDown,
+  Users, Package, IndianRupee, ShoppingCart, Receipt, CreditCard, BarChart3,
+  ArrowUpRight, ArrowDownRight, Calendar, Activity, Bell, CheckCircle
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
-// Draft voucher storage key
-const DRAFTS_STORAGE_KEY = 'voucher_drafts';
-
-// Get drafts from localStorage
-const getDrafts = () => {
-  try {
-    const drafts = localStorage.getItem(DRAFTS_STORAGE_KEY);
-    return drafts ? JSON.parse(drafts) : [];
-  } catch {
-    return [];
-  }
-};
-
-// Save drafts to localStorage
-const saveDrafts = (drafts) => {
-  localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
-};
-
-// Sample drafts for demonstration
-const sampleDrafts = [
-  {
-    id: 'draft-1',
-    type: 'sales',
-    party_name: 'ABC Traders',
-    amount: 15000,
-    date: new Date().toISOString().split('T')[0],
-    narration: 'Sales invoice - pending approval',
-    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    status: 'draft'
-  },
-  {
-    id: 'draft-2',
-    type: 'purchase',
-    party_name: 'XYZ Suppliers',
-    amount: 8500,
-    date: new Date().toISOString().split('T')[0],
-    narration: 'Purchase order - awaiting confirmation',
-    created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    status: 'draft'
-  },
-  {
-    id: 'draft-3',
-    type: 'receipt',
-    party_name: 'LMN Enterprise',
-    amount: 25000,
-    date: new Date().toISOString().split('T')[0],
-    narration: 'Receipt against invoice #1234',
-    created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    status: 'draft'
-  }
-];
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, isAdminOrHigher, isRoot } = useAuth();
   const navigate = useNavigate();
-  const [drafts, setDrafts] = useState([]);
+  const [stats, setStats] = useState({
+    totalSales: 0,
+    totalPurchases: 0,
+    totalReceipts: 0,
+    totalPayments: 0,
+    pendingInvoices: 0,
+    inventoryItems: 0,
+    ledgerCount: 0,
+    employeeCount: 0
+  });
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [pendingTasks, setPendingTasks] = useState([]);
+  const [upcomingFollowups, setUpcomingFollowups] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Load drafts on mount
+  // Load dashboard data
   useEffect(() => {
-    let storedDrafts = getDrafts();
-    // If no drafts exist, initialize with sample drafts
-    if (storedDrafts.length === 0) {
-      storedDrafts = sampleDrafts;
-      saveDrafts(storedDrafts);
-    }
-    setDrafts(storedDrafts);
+    const loadDashboardData = async () => {
+      setLoading(true);
+      try {
+        // Try to fetch voucher stats
+        try {
+          const salesRes = await axios.get(`${API_BASE}/api/vouchers?type=sales&limit=1`);
+          const purchaseRes = await axios.get(`${API_BASE}/api/vouchers?type=purchase&limit=1`);
+          const receiptRes = await axios.get(`${API_BASE}/api/vouchers?type=receipt&limit=1`);
+          const paymentRes = await axios.get(`${API_BASE}/api/vouchers?type=payment&limit=1`);
+          
+          // Get counts from response
+          setStats(prev => ({
+            ...prev,
+            totalSales: salesRes.data?.total || salesRes.data?.data?.length || 0,
+            totalPurchases: purchaseRes.data?.total || purchaseRes.data?.data?.length || 0,
+            totalReceipts: receiptRes.data?.total || receiptRes.data?.data?.length || 0,
+            totalPayments: paymentRes.data?.total || paymentRes.data?.data?.length || 0
+          }));
+        } catch {}
+
+        // Load local storage data
+        const employees = JSON.parse(localStorage.getItem("crm_employees") || "[]");
+        const todos = JSON.parse(localStorage.getItem("crm_todos") || "[]");
+        const followups = JSON.parse(localStorage.getItem("crm_followups") || "[]");
+
+        setStats(prev => ({
+          ...prev,
+          employeeCount: employees.length
+        }));
+
+        // Get pending tasks
+        const pending = todos.filter(t => t.status === "pending").slice(0, 5);
+        setPendingTasks(pending);
+
+        // Get upcoming followups
+        const today = new Date();
+        const upcoming = followups
+          .filter(f => f.status === "pending" && f.scheduledDate)
+          .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate))
+          .slice(0, 5);
+        setUpcomingFollowups(upcoming);
+
+        // Generate recent activity
+        const activities = [];
+        if (todos.length > 0) {
+          const recentTodo = todos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+          if (recentTodo) activities.push({ type: "task", message: `Task created: ${recentTodo.title}`, time: recentTodo.createdAt });
+        }
+        if (employees.length > 0) {
+          const recentEmp = employees.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+          if (recentEmp) activities.push({ type: "employee", message: `Employee added: ${recentEmp.name}`, time: recentEmp.createdAt });
+        }
+        setRecentActivity(activities.slice(0, 5));
+
+      } catch (err) {
+        console.error("Dashboard load error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
   }, []);
 
-  // Delete a draft
-  const deleteDraft = (id) => {
-    const updatedDrafts = drafts.filter(d => d.id !== id);
-    saveDrafts(updatedDrafts);
-    setDrafts(updatedDrafts);
+  // Format currency
+  const formatCurrency = (amount) => {
+    if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(1)}Cr`;
+    if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
+    if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`;
+    return `₹${amount}`;
   };
 
-  // Format time ago
-  const timeAgo = (dateStr) => {
+  // Format date
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "-";
     const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    
-    if (diffMins < 60) return `${diffMins} min ago`;
-    if (diffHours < 24) return `${diffHours} hr ago`;
-    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
   };
 
-  // Get type color
-  const getTypeColor = (type) => {
-    switch(type) {
-      case 'sales': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-      case 'purchase': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-      case 'receipt': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
-      case 'payment': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
-      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400';
-    }
-  };
+  // Quick action cards
+  const quickActions = [
+    { title: "Vouchers", icon: FileText, path: "/vouchers", color: "bg-blue-500", count: stats.totalSales + stats.totalPurchases },
+    { title: "Inventory", icon: Package, path: "/inventory", color: "bg-purple-500" },
+    { title: "Ledgers", icon: BarChart3, path: "/ledgers", color: "bg-green-500" },
+    { title: "Employees", icon: Users, path: "/employees", color: "bg-orange-500", count: stats.employeeCount },
+    { title: "Reports", icon: TrendingUp, path: "/reports", color: "bg-pink-500" },
+    { title: "Tasks", icon: CheckCircle, path: "/todos", color: "bg-indigo-500", count: pendingTasks.length }
+  ];
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-sky-700 dark:text-sky-400">Dashboard Overview</h1>
+    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">
+          Welcome back, {user?.name || user?.username}! Here's your business overview.
+        </p>
+      </div>
 
-      {user && (
-        <div className="bg-white dark:bg-gray-800 rounded shadow p-3 border border-gray-200 dark:border-gray-700 flex items-center gap-4 max-w-xl">
-          <span className="text-base font-semibold text-gray-900 dark:text-gray-100">Welcome, {user.name || user.username}!</span>
-          <span className="text-xs text-gray-500 dark:text-gray-400 border-l border-gray-300 dark:border-gray-600 pl-3 ml-3">{user.role}</span>
-          {user.email && (
-            <span className="text-xs text-gray-500 dark:text-gray-400 border-l border-gray-300 dark:border-gray-600 pl-3 ml-3">{user.email}</span>
-          )}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Total Sales</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalSales}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <TrendingUp className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center text-sm text-green-600">
+            <ArrowUpRight className="w-4 h-4 mr-1" />
+            <span>View all sales</span>
+          </div>
         </div>
-      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 border border-blue-200 dark:border-blue-800">
-          <p className="text-blue-600 dark:text-blue-400 text-sm font-medium">Quick Stats</p>
-          <p className="text-2xl font-bold text-blue-900 dark:text-blue-300 mt-2">Coming Soon</p>
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Total Purchases</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalPurchases}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <ShoppingCart className="w-6 h-6 text-red-600" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center text-sm text-red-600">
+            <ArrowDownRight className="w-4 h-4 mr-1" />
+            <span>View all purchases</span>
+          </div>
         </div>
-        <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-6 border border-green-200 dark:border-green-800">
-          <p className="text-green-600 dark:text-green-400 text-sm font-medium">Analytics</p>
-          <p className="text-2xl font-bold text-green-900 dark:text-green-300 mt-2">Coming Soon</p>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Receipts</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalReceipts}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <Receipt className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center text-sm text-blue-600">
+            <span>Money received</span>
+          </div>
         </div>
-        <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-6 border border-purple-200 dark:border-purple-800">
-          <p className="text-purple-600 dark:text-purple-400 text-sm font-medium">Reports</p>
-          <p className="text-2xl font-bold text-purple-900 dark:text-purple-300 mt-2">Coming Soon</p>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Payments</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalPayments}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+              <CreditCard className="w-6 h-6 text-orange-600" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center text-sm text-orange-600">
+            <span>Money paid out</span>
+          </div>
         </div>
       </div>
 
-      {/* Drafts Section */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Draft Vouchers</h2>
-            <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-full">
-              {drafts.length}
-            </span>
+      {/* Quick Actions */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {quickActions.map((action, idx) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={idx}
+                onClick={() => navigate(action.path)}
+                className="group bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 transition-all text-center"
+              >
+                <div className={`w-12 h-12 ${action.color} rounded-xl flex items-center justify-center mx-auto mb-3`}>
+                  <Icon className="w-6 h-6 text-white" />
+                </div>
+                <p className="font-medium text-gray-900 dark:text-white text-sm">{action.title}</p>
+                {action.count !== undefined && (
+                  <p className="text-xs text-gray-500 mt-1">{action.count} items</p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Pending Tasks */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-blue-600" />
+              Pending Tasks
+            </h3>
+            <button onClick={() => navigate("/todos")} className="text-sm text-blue-600 hover:underline">View All</button>
           </div>
-          <button
-            onClick={() => navigate('/vouchers?action=new')}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition"
-          >
-            <Plus className="w-4 h-4" />
-            New Draft
-          </button>
+          <div className="p-4">
+            {pendingTasks.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No pending tasks</p>
+            ) : (
+              <div className="space-y-3">
+                {pendingTasks.map(task => (
+                  <div key={task.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <div className={`w-2 h-2 rounded-full ${task.priority === "high" ? "bg-red-500" : task.priority === "medium" ? "bg-yellow-500" : "bg-green-500"}`} />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</p>
+                      {task.dueDate && <p className="text-xs text-gray-500">Due: {formatDate(task.dueDate)}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {drafts.length === 0 ? (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-            <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
-            <p>No draft vouchers</p>
-            <p className="text-sm mt-1">Create a new voucher and save as draft</p>
+        {/* Upcoming Follow-ups */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Bell className="w-5 h-5 text-orange-600" />
+              Upcoming Follow-ups
+            </h3>
+            <button onClick={() => navigate("/todos")} className="text-sm text-blue-600 hover:underline">View All</button>
           </div>
-        ) : (
-          <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {drafts.map(draft => (
-              <div 
-                key={draft.id}
-                className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition"
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`p-2 rounded-lg ${getTypeColor(draft.type)}`}>
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900 dark:text-white">{draft.party_name}</span>
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${getTypeColor(draft.type)}`}>
-                        {draft.type.charAt(0).toUpperCase() + draft.type.slice(1)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      <span>₹{draft.amount?.toLocaleString('en-IN')}</span>
-                      <span>•</span>
-                      <span>{draft.narration}</span>
+          <div className="p-4">
+            {upcomingFollowups.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No upcoming follow-ups</p>
+            ) : (
+              <div className="space-y-3">
+                {upcomingFollowups.map(followup => (
+                  <div key={followup.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <Calendar className="w-5 h-5 text-blue-500" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{followup.title}</p>
+                      <p className="text-xs text-gray-500">{followup.contactName} • {formatDate(followup.scheduledDate)}</p>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
-                    <Clock className="w-3 h-3" />
-                    {timeAgo(draft.created_at)}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => navigate(`/vouchers?draft=${draft.id}`)}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition"
-                      title="Edit Draft"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => deleteDraft(draft.id)}
-                      className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition"
-                      title="Delete Draft"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => navigate(`/vouchers?draft=${draft.id}`)}
-                      className="p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
-                      title="Continue Editing"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
