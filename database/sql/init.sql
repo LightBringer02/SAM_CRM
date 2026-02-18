@@ -345,11 +345,22 @@ CREATE TABLE IF NOT EXISTS tally_ledgers (
     parent VARCHAR(255),
     opening_balance DECIMAL(20, 2) DEFAULT 0,
     closing_balance DECIMAL(20, 2) DEFAULT 0,
+    raw_closing_balance DECIMAL(20, 2) DEFAULT 0,
+    on_account_value DECIMAL(20, 2) DEFAULT 0,
+    balance_type VARCHAR(5) DEFAULT 'Dr',
+    is_debit BOOLEAN DEFAULT TRUE,
+    is_credit BOOLEAN DEFAULT FALSE,
     address TEXT,
     email VARCHAR(255),
     phone VARCHAR(50),
     gstin VARCHAR(20),
+    gst_type VARCHAR(50),
+    place_of_supply VARCHAR(100),
     pan VARCHAR(20),
+    state VARCHAR(100),
+    country VARCHAR(100) DEFAULT 'India',
+    pincode VARCHAR(20),
+    mailing_name VARCHAR(255),
     tally_guid VARCHAR(100),
     pending_tally_sync BOOLEAN DEFAULT FALSE,
     last_synced TIMESTAMP,
@@ -357,6 +368,8 @@ CREATE TABLE IF NOT EXISTS tally_ledgers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ledgers_name ON tally_ledgers(name);
+CREATE INDEX IF NOT EXISTS idx_ledgers_parent ON tally_ledgers(parent);
+CREATE INDEX IF NOT EXISTS idx_ledgers_gstin ON tally_ledgers(gstin);
 
 -- Tally Stock Items Table
 CREATE TABLE IF NOT EXISTS tally_stock_items (

@@ -7,10 +7,11 @@ import Dashboard from "../pages/Dashboard";
 import Inventory from "../pages/Inventory";
 import Vouchers from "../pages/Vouchers";
 import Ledgers from "../pages/Ledgers";
+import BlacklistedLedgers from "../pages/BlacklistedLedgers";
 import Communication from "../pages/Communication";
 import Orders from "../pages/Orders";
 import Users from "../pages/Users";
-import Employees from "../pages/EmployeesNew";
+import Employees from "../pages/Employees.jsx";
 import EmployeeAttendance from "../pages/EmployeeAttendance";
 import EmployeeManagement from "../pages/EmployeeManagement";
 import Logs from "../pages/Logs";
@@ -18,6 +19,7 @@ import Todos from "../pages/Todos";
 import Reports from "../pages/Reports";
 import Profile from "../pages/Profile";
 import Settings from "../pages/Settings";
+import ThemeSettings from "../pages/ThemeSettings";
 import Login from "../pages/Login";
 import ChangePasswordOnFirstLogin from "../pages/ChangePasswordOnFirstLogin";
 import SystemConfig from "../pages/SystemConfig";
@@ -125,6 +127,14 @@ export default function AppRouter() {
           }
         />
         <Route
+          path="/ledgers/blacklisted"
+          element={
+            <ProtectedLayout>
+              <BlacklistedLedgers />
+            </ProtectedLayout>
+          }
+        />
+        <Route
           path="/communication"
           element={
             <ProtectedLayout>
@@ -209,6 +219,14 @@ export default function AppRouter() {
           element={
             <ProtectedLayout>
               <Settings />
+            </ProtectedLayout>
+          }
+        />
+        <Route
+          path="/settings/theme"
+          element={
+            <ProtectedLayout>
+              <ThemeSettings />
             </ProtectedLayout>
           }
         />

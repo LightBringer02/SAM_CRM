@@ -58,7 +58,19 @@ export default function Logs() {
 
   const loadLogs = () => {
     const storedLogs = JSON.parse(localStorage.getItem("crm_logs") || "[]");
-    setLogs(storedLogs);
+    const users = JSON.parse(localStorage.getItem("users") || "[]");
+    
+    // Filter out root user logs for non-root users
+    const filteredStoredLogs = isRoot() 
+      ? storedLogs 
+      : storedLogs.filter(log => {
+          // Find the user who created this log
+          const logUser = users.find(u => u.id === log.userId);
+          // If user found and is root, hide this log from non-root users
+          return !logUser || logUser.role !== 'root';
+        });
+    
+    setLogs(filteredStoredLogs);
   };
 
   // Filter logs
@@ -109,7 +121,7 @@ export default function Logs() {
   // Access denied message
   if (!isAdminOrHigher) {
     return (
-      <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen flex items-center justify-center">
+      <div className="p-6 min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
@@ -120,7 +132,7 @@ export default function Logs() {
   }
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="p-6 min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>

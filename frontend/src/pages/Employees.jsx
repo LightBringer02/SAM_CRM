@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../auth";
+import { useTheme } from "../theme";
 import { 
   Users, UserPlus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight,
   Calendar, CheckCircle, XCircle, Clock, AlertCircle, Phone, Mail,
-  Building, Briefcase, IndianRupee, FileText, User, CalendarDays
+  Building, Briefcase, IndianRupee, FileText, User, CalendarDays, Activity,
+  TrendingUp, TrendingDown, Zap, Heart, Target, DollarSign, BarChart3,
+  Gauge, AlertTriangle, ArrowUpRight, ArrowDownRight, Timer, UserCheck
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 // Attendance status options
 const ATTENDANCE_STATUS = {
@@ -77,7 +81,11 @@ function getDaysInMonth(year, month) {
 }
 
 export default function Employees() {
-  const { user, isAdminOrHigher, users } = useAuth();
+  const { user, isAdminOrHigher, isRoot, users } = useAuth();
+  const navigate = useNavigate();
+  
+  // Filter out root users from the users list for non-root users
+  const filteredUsers = isRoot() ? users : users?.filter(u => u.role !== 'root');
   const [activeSection, setActiveSection] = useState(null); // 'management' or 'attendance'
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState({});
@@ -102,16 +110,143 @@ export default function Employees() {
     address: "",
     emergencyContact: "",
     notes: "",
+    stressLevel: 0, // 0-100 stress level
     isUser: false,
     userId: null
   });
 
+  // Get theme for styling
+  const { currentTheme, dark } = useTheme();
+
+  // Constants for analytics
+  const MONTHLY_TARGET = 500000; // Monthly revenue target
+  const TOTAL_REVENUE = 425000; // Example total revenue - could be passed as prop
+
+  // ==================== EXECUTIVE ANALYTICS CALCULATIONS ====================
+  
+  // Calculate average stress score from all employees
+  const avgStressScore = useMemo(() => {
+    if (employees.length === 0) return 0;
+    const totalStress = employees.reduce((sum, emp) => sum + (emp.stressLevel || 0), 0);
+    return Math.round(totalStress / employees.length);
+  }, [employees]);
+
+  // Calculate revenue per employee
+  const revenuePerEmployee = useMemo(() => {
+    if (employees.length === 0) return 0;
+    return Math.round(TOTAL_REVENUE / employees.length);
+  }, [employees]);
+
+  // Calculate today's absenteeism rate
+  const absenteeismData = useMemo(() => {
+    const todayKey = formatDateKey(new Date());
+    let absentCount = 0;
+    let presentCount = 0;
+    let lateCount = 0;
+    let totalMarked = 0;
+
+    employees.forEach(emp => {
+      const todayAttendance = attendance[emp.id]?.[todayKey];
+      if (todayAttendance) {
+        totalMarked++;
+        if (todayAttendance.status === 'absent') absentCount++;
+        if (todayAttendance.status === 'present') presentCount++;
+        if (todayAttendance.status === 'half_day') {
+          lateCount++;
+          presentCount += 0.5;
+        }
+      }
+    });
+
+    const rate = employees.length > 0 ? Math.round((absentCount / employees.length) * 100) : 0;
+    const punctualityRate = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 0;
+    
+    return { 
+      absentCount, 
+      presentCount: Math.round(presentCount), 
+      lateCount, 
+      totalMarked, 
+      rate,
+      punctualityRate
+    };
+  }, [employees, attendance]);
+
+  // Calculate target gap
+  const targetGap = useMemo(() => {
+    const gap = MONTHLY_TARGET - TOTAL_REVENUE;
+    const percentageAchieved = Math.round((TOTAL_REVENUE / MONTHLY_TARGET) * 100);
+    return {
+      amount: gap,
+      percentage: percentageAchieved,
+      isOnTrack: percentageAchieved >= 85
+    };
+  }, []);
+
+  // Count high-stress employees (burnout risk)
+  const burnoutRiskCount = useMemo(() => {
+    return employees.filter(emp => (emp.stressLevel || 0) > 70).length;
+  }, [employees]);
+
+  // Calculate efficiency score based on attendance and stress
+  const efficiencyScore = useMemo(() => {
+    if (employees.length === 0) return 0;
+    const attendanceWeight = 0.6;
+    const stressWeight = 0.4;
+    const attendanceScore = absenteeismData.punctualityRate || 50;
+    const stressScore = 100 - avgStressScore; // Lower stress = higher efficiency
+    return Math.round((attendanceScore * attendanceWeight) + (stressScore * stressWeight));
+  }, [avgStressScore, absenteeismData.punctualityRate, employees.length]);
+
+  // Get stress status label and colors
+  const getStressStatus = useMemo(() => {
+    if (avgStressScore <= 35) {
+      return { 
+        label: 'Calm', 
+        bgColor: 'bg-emerald-50 dark:bg-emerald-900/20', 
+        textColor: 'text-emerald-600 dark:text-emerald-400',
+        borderColor: 'border-emerald-200 dark:border-emerald-800',
+        iconColor: 'text-emerald-500',
+        animate: false
+      };
+    } else if (avgStressScore <= 70) {
+      return { 
+        label: 'Active', 
+        bgColor: 'bg-amber-50 dark:bg-amber-900/20', 
+        textColor: 'text-amber-600 dark:text-amber-400',
+        borderColor: 'border-amber-200 dark:border-amber-800',
+        iconColor: 'text-amber-500',
+        animate: false
+      };
+    } else {
+      return { 
+        label: 'Burnout Risk', 
+        bgColor: 'bg-rose-50 dark:bg-rose-900/20', 
+        textColor: 'text-rose-600 dark:text-rose-400',
+        borderColor: 'border-rose-200 dark:border-rose-800',
+        iconColor: 'text-rose-500',
+        animate: true
+      };
+    }
+  }, [avgStressScore]);
+
+  // ==================== END ANALYTICS CALCULATIONS ====================
+
   // Check if current user can manage employees
   const canManage = isAdminOrHigher();
 
+  // Check if a user is a root user (for hiding root presence)
+  const isRootUser = (userId) => {
+    if (!userId) return false;
+    const userRecord = users?.find(u => u.id === userId);
+    return userRecord?.role === 'root';
+  };
+
   // Check if a user is online (active within last 5 minutes)
+  // Don't show online status for root users unless current user is root
   const isUserOnline = (userId) => {
     if (!userId) return false;
+    // Hide root user presence for non-root users
+    if (!isRoot() && isRootUser(userId)) return false;
     const lastActivity = localStorage.getItem(`user_activity_${userId}`);
     if (!lastActivity) return false;
     const timeDiff = Date.now() - parseInt(lastActivity, 10);
@@ -119,8 +254,11 @@ export default function Employees() {
   };
 
   // Get last seen time
+  // Don't show last seen for root users unless current user is root
   const getLastSeen = (userId) => {
     if (!userId) return null;
+    // Hide root user presence for non-root users
+    if (!isRoot() && isRootUser(userId)) return null;
     const lastActivity = localStorage.getItem(`user_activity_${userId}`);
     if (!lastActivity) return null;
     const date = new Date(parseInt(lastActivity, 10));
@@ -286,64 +424,239 @@ export default function Employees() {
     return { present, absent, halfDay, leave, holiday, unmarked, total: daysInMonth };
   };
 
-  // Render section cards
-  const renderSectionCards = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      {/* Management Card */}
-      <div
-        className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${
-          activeSection === 'management'
-            ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20'
-            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f22] hover:border-sky-300 dark:hover:border-sky-700'
-        }`}
-        onClick={() => setActiveSection(activeSection === 'management' ? null : 'management')}
-      >
-        <div className="flex items-center justify-between">
+  // ==================== EXECUTIVE ANALYTICS HEADER ====================
+  const renderExecutiveAnalyticsHeader = () => (
+    <div className="mb-8">
+      {/* Main Glassmorphism Container */}
+      <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md rounded-3xl border border-white/20 dark:border-gray-700/50 shadow-xl p-6 mb-6">
+        {/* Header Title */}
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-sky-100 dark:bg-sky-900/50 rounded-lg">
-              <Users className="w-6 h-6 text-sky-600 dark:text-sky-400" />
+            <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+              <BarChart3 className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Employee Management</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{employees.length} employees</p>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Executive Analytics</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Real-time workforce health & performance</p>
             </div>
           </div>
-          {activeSection === 'management' ? (
-            <ChevronDown className="w-5 h-5 text-gray-400" />
-          ) : (
-            <ChevronRight className="w-5 h-5 text-gray-400" />
-          )}
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            <span className="text-xs text-gray-500 dark:text-gray-400">Live</span>
+          </div>
+        </div>
+
+        {/* Three Main Analytics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          
+          {/* STRESS PULSE CARD - Dynamic Background */}
+          <div className={`relative overflow-hidden rounded-2xl border p-5 transition-all duration-500 ${getStressStatus.bgColor} ${getStressStatus.borderColor} ${getStressStatus.animate ? 'animate-pulse' : ''}`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Heart className={`w-4 h-4 ${getStressStatus.iconColor}`} />
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Stress Pulse</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-4xl font-bold ${getStressStatus.textColor}`}>{avgStressScore}</span>
+                  <span className="text-lg text-gray-400">%</span>
+                </div>
+                <span className={`text-sm font-semibold ${getStressStatus.textColor}`}>{getStressStatus.label}</span>
+              </div>
+              <div className={`p-3 rounded-xl ${getStressStatus.bgColor}`}>
+                <Gauge className={`w-8 h-8 ${getStressStatus.iconColor}`} />
+              </div>
+            </div>
+            {/* Stress Bar */}
+            <div className="mt-4">
+              <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-700 ${
+                    avgStressScore <= 35 ? 'bg-emerald-500' : 
+                    avgStressScore <= 70 ? 'bg-amber-500' : 'bg-rose-500'
+                  }`}
+                  style={{ width: `${avgStressScore}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1 text-xs text-gray-400">
+                <span>Calm</span>
+                <span>Active</span>
+                <span>Critical</span>
+              </div>
+            </div>
+          </div>
+
+          {/* EFFICIENCY CARD */}
+          <div className="relative overflow-hidden rounded-2xl border border-sky-200 dark:border-sky-800 bg-gradient-to-br from-sky-50 to-blue-50 dark:from-sky-900/30 dark:to-blue-900/20 p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Zap className="w-4 h-4 text-sky-500" />
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Efficiency</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-bold text-sky-600 dark:text-sky-400">{efficiencyScore}</span>
+                  <span className="text-lg text-gray-400">%</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1">
+                  {efficiencyScore >= 70 ? (
+                    <ArrowUpRight className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4 text-red-500" />
+                  )}
+                  <span className={`text-sm font-medium ${efficiencyScore >= 70 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {efficiencyScore >= 70 ? 'Optimal' : 'Needs Attention'}
+                  </span>
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-sky-100 dark:bg-sky-800/50">
+                <Activity className="w-8 h-8 text-sky-500 dark:text-sky-400" />
+              </div>
+            </div>
+            {/* Mini Breakdown */}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="text-center p-2 bg-white/60 dark:bg-gray-800/40 rounded-lg">
+                <p className="text-xs text-gray-500">Attendance</p>
+                <p className="font-bold text-sky-600 dark:text-sky-400">{absenteeismData.punctualityRate}%</p>
+              </div>
+              <div className="text-center p-2 bg-white/60 dark:bg-gray-800/40 rounded-lg">
+                <p className="text-xs text-gray-500">Wellness</p>
+                <p className="font-bold text-sky-600 dark:text-sky-400">{100 - avgStressScore}%</p>
+              </div>
+            </div>
+          </div>
+
+          {/* REVENUE CARD */}
+          <div className="relative overflow-hidden rounded-2xl border border-violet-200 dark:border-violet-800 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/30 dark:to-purple-900/20 p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <DollarSign className="w-4 h-4 text-violet-500" />
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Revenue/Employee</span>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-lg text-violet-400">₹</span>
+                  <span className="text-4xl font-bold text-violet-600 dark:text-violet-400">
+                    {revenuePerEmployee > 1000 ? `${(revenuePerEmployee / 1000).toFixed(1)}K` : revenuePerEmployee}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {employees.length} active employees
+                </p>
+              </div>
+              <div className="p-3 rounded-xl bg-violet-100 dark:bg-violet-800/50">
+                <TrendingUp className="w-8 h-8 text-violet-500 dark:text-violet-400" />
+              </div>
+            </div>
+            {/* Target Progress */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-500">Target Progress</span>
+                <span className="text-xs font-bold text-violet-600 dark:text-violet-400">{targetGap.percentage}%</span>
+              </div>
+              <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-700"
+                  style={{ width: `${Math.min(targetGap.percentage, 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Status Chips Row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Absence Chip */}
+          <div className="flex items-center gap-3 p-3 bg-white/60 dark:bg-gray-800/40 rounded-xl border border-gray-100 dark:border-gray-700">
+            <div className={`p-2 rounded-lg ${absenteeismData.rate > 20 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
+              <XCircle className={`w-4 h-4 ${absenteeismData.rate > 20 ? 'text-red-500' : 'text-green-500'}`} />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Absence Rate</p>
+              <p className={`text-lg font-bold ${absenteeismData.rate > 20 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                {absenteeismData.rate}%
+              </p>
+            </div>
+          </div>
+
+          {/* Punctuality Chip */}
+          <div className="flex items-center gap-3 p-3 bg-white/60 dark:bg-gray-800/40 rounded-xl border border-gray-100 dark:border-gray-700">
+            <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
+              <Timer className="w-4 h-4 text-sky-500" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Punctuality</p>
+              <p className="text-lg font-bold text-sky-600 dark:text-sky-400">{absenteeismData.punctualityRate}%</p>
+            </div>
+          </div>
+
+          {/* Risk Count Chip */}
+          <div className="flex items-center gap-3 p-3 bg-white/60 dark:bg-gray-800/40 rounded-xl border border-gray-100 dark:border-gray-700">
+            <div className={`p-2 rounded-lg ${burnoutRiskCount > 0 ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-emerald-100 dark:bg-emerald-900/30'}`}>
+              <AlertTriangle className={`w-4 h-4 ${burnoutRiskCount > 0 ? 'text-orange-500' : 'text-emerald-500'}`} />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Burnout Risk</p>
+              <p className={`text-lg font-bold ${burnoutRiskCount > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {burnoutRiskCount} {burnoutRiskCount === 1 ? 'person' : 'people'}
+              </p>
+            </div>
+          </div>
+
+          {/* Target Progress Chip */}
+          <div className="flex items-center gap-3 p-3 bg-white/60 dark:bg-gray-800/40 rounded-xl border border-gray-100 dark:border-gray-700">
+            <div className={`p-2 rounded-lg ${targetGap.isOnTrack ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-amber-100 dark:bg-amber-900/30'}`}>
+              <Target className={`w-4 h-4 ${targetGap.isOnTrack ? 'text-emerald-500' : 'text-amber-500'}`} />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Target Status</p>
+              <p className={`text-lg font-bold ${targetGap.isOnTrack ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                {targetGap.isOnTrack ? 'On Track' : `₹${(targetGap.amount / 1000).toFixed(0)}K Gap`}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Attendance Card */}
-      <div
-        className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${
-          activeSection === 'attendance'
-            ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f22] hover:border-green-300 dark:hover:border-green-700'
-        }`}
-        onClick={() => setActiveSection(activeSection === 'attendance' ? null : 'attendance')}
-      >
-        <div className="flex items-center justify-between">
+      {/* Quick Action Buttons - Replaced Old Section Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Management Quick Action */}
+        <button
+          onClick={() => navigate('/employee-management')}
+          className="flex items-center justify-between p-4 rounded-2xl border-2 transition-all duration-300 border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/40 hover:border-sky-300 dark:hover:border-sky-700 hover:shadow-md"
+        >
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-100 dark:bg-green-900/50 rounded-lg">
-              <Calendar className="w-6 h-6 text-green-600 dark:text-green-400" />
+            <div className={`p-2.5 rounded-xl bg-sky-100 dark:bg-sky-900/50`}>
+              <Users className="w-5 h-5 text-sky-600 dark:text-sky-400" />
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Attendance</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{getMonthName(selectedMonth)} {selectedYear}</p>
+            <div className="text-left">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Employee Management</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{employees.length} employees • {employees.filter(e => e.isUser).length} linked users</p>
             </div>
           </div>
-          {activeSection === 'attendance' ? (
-            <ChevronDown className="w-5 h-5 text-gray-400" />
-          ) : (
-            <ChevronRight className="w-5 h-5 text-gray-400" />
-          )}
-        </div>
+          <ChevronRight className="w-5 h-5 text-gray-400" />
+        </button>
+
+        {/* Attendance Quick Action */}
+        <button
+          onClick={() => navigate('/employee-attendance')}
+          className="flex items-center justify-between p-4 rounded-2xl border-2 transition-all duration-300 border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/40 hover:border-emerald-300 dark:hover:border-emerald-700 hover:shadow-md"
+        >
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/50`}>
+              <Calendar className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Attendance Tracker</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{getMonthName(selectedMonth)} {selectedYear} • {absenteeismData.presentCount} present today</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-400" />
+        </button>
       </div>
     </div>
   );
+  // ==================== END EXECUTIVE ANALYTICS HEADER ====================
 
   // Render mini attendance dashboard
   const renderAttendanceDashboard = () => (
@@ -423,6 +736,7 @@ export default function Employees() {
               <tr className="bg-gray-50 dark:bg-gray-800">
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Name</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Status</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Stress Level</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Department</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Designation</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Contact</th>
@@ -460,6 +774,28 @@ export default function Employees() {
                     ) : (
                       <span className="text-xs text-gray-400">-</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {/* Stress Level Bar */}
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all ${
+                            (emp.stressLevel || 0) <= 30 ? 'bg-green-500' :
+                            (emp.stressLevel || 0) <= 60 ? 'bg-yellow-500' :
+                            (emp.stressLevel || 0) <= 80 ? 'bg-orange-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${emp.stressLevel || 0}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs font-medium ${
+                        (emp.stressLevel || 0) <= 30 ? 'text-green-600 dark:text-green-400' :
+                        (emp.stressLevel || 0) <= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+                        (emp.stressLevel || 0) <= 80 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {emp.stressLevel || 0}%
+                      </span>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{emp.department || '-'}</td>
                   <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{emp.designation || '-'}</td>
@@ -512,7 +848,7 @@ export default function Employees() {
 
   // Render attendance section
   const renderAttendanceSection = () => {
-    const daysInMonth = getDaysInMonth(selectedYear, selectedMonth);
+   const daysInMonth = getDaysInMonth(selectedYear, selectedMonth);
 
     return (
       <div className="bg-white dark:bg-[#1e1f22] rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -737,6 +1073,42 @@ export default function Employees() {
                 placeholder="+91 XXXXX XXXXX"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  Stress Level: {formData.stressLevel || 0}%
+                </div>
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={formData.stressLevel || 0}
+                  onChange={e => setFormData({ ...formData, stressLevel: parseInt(e.target.value) })}
+                  className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  style={{
+                    background: `linear-gradient(to right, 
+                      ${(formData.stressLevel || 0) <= 30 ? '#22c55e' : 
+                        (formData.stressLevel || 0) <= 60 ? '#eab308' : 
+                        (formData.stressLevel || 0) <= 80 ? '#f97316' : '#ef4444'} 
+                      ${formData.stressLevel || 0}%, 
+                      #374151 ${formData.stressLevel || 0}%)`
+                  }}
+                />
+                <span className={`text-sm font-bold px-2 py-1 rounded ${
+                  (formData.stressLevel || 0) <= 30 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                  (formData.stressLevel || 0) <= 60 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                  (formData.stressLevel || 0) <= 80 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                }`}>
+                  {(formData.stressLevel || 0) <= 30 ? 'Low' :
+                   (formData.stressLevel || 0) <= 60 ? 'Medium' :
+                   (formData.stressLevel || 0) <= 80 ? 'High' : 'Critical'}
+                </span>
+              </div>
+            </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
               <textarea
@@ -774,7 +1146,7 @@ export default function Employees() {
                   className="mt-2 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                 >
                   <option value="">Select user account...</option>
-                  {users?.map(u => (
+                  {filteredUsers?.map(u => (
                     <option key={u.id} value={u.id}>{u.username || u.email} ({u.role})</option>
                   ))}
                 </select>
@@ -803,7 +1175,7 @@ export default function Employees() {
   );
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-[#0f172a] min-h-screen">
+    <div className="p-6 min-h-screen">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <Users className="w-8 h-8 text-sky-600 dark:text-sky-400" />
@@ -828,15 +1200,48 @@ export default function Employees() {
         </div>
       )}
 
-      {/* Section Cards */}
-      {renderSectionCards()}
+      {/* Dropdowns at the top (now navigation buttons) */}
+      <div className="flex flex-col gap-4 mb-6">
+        {/* Employee Management Navigation */}
+        <div>
+          <button
+            onClick={() => navigate('/employee-management')}
+            className="flex items-center justify-between w-full p-4 rounded-2xl border-2 transition-all duration-300 border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/40 hover:border-sky-300 dark:hover:border-sky-700 hover:shadow-md"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-sky-100 dark:bg-sky-900/50">
+                <Users className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+              </div>
+              <div className="text-left">
+                <h3 className="font-semibold text-gray-900 dark:text-white">Employee Management</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{employees.length} employees • {employees.filter(e => e.isUser).length} linked users</p>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+        {/* Attendance Tracker Navigation */}
+        <div>
+          <button
+            onClick={() => navigate('/employee-attendance')}
+            className="flex items-center justify-between w-full p-4 rounded-2xl border-2 transition-all duration-300 border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/40 hover:border-emerald-300 dark:hover:border-emerald-700 hover:shadow-md"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/50">
+                <Calendar className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="text-left">
+                <h3 className="font-semibold text-gray-900 dark:text-white">Attendance Tracker</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{getMonthName(selectedMonth)} {selectedYear} • {absenteeismData.presentCount} present today</p>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+      </div>
 
-      {/* Attendance Mini Dashboard (always visible when there are employees) */}
-      {employees.length > 0 && renderAttendanceDashboard()}
-
-      {/* Active Section Content */}
-      {activeSection === 'management' && renderManagementSection()}
-      {activeSection === 'attendance' && renderAttendanceSection()}
+      {/* Executive Analytics always below navigation buttons */}
+      {renderExecutiveAnalyticsHeader()}
 
       {/* Modals */}
       {showCreateModal && renderEmployeeModal(false)}

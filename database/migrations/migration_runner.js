@@ -93,6 +93,73 @@ async function runAllMigrations() {
 }
 
 /**
+ * Split SQL respecting dollar-quoted strings (for PL/pgSQL functions)
+ * This prevents breaking functions that contain semicolons
+ */
+function splitSqlStatements(sql) {
+  const statements = [];
+  let current = '';
+  let inDollarQuote = false;
+  let dollarTag = '';
+  
+  // Remove single-line comments
+  const lines = sql.split('\n');
+  const cleanedLines = lines.map(line => {
+    const commentIdx = line.indexOf('--');
+    if (commentIdx >= 0) {
+      return line.substring(0, commentIdx);
+    }
+    return line;
+  });
+  const cleanedSql = cleanedLines.join('\n');
+  
+  for (let i = 0; i < cleanedSql.length; i++) {
+    const char = cleanedSql[i];
+    
+    // Check for dollar-quote start/end
+    if (char === '$') {
+      // Look for dollar tag pattern: $tag$ or $$
+      let tagEnd = i + 1;
+      while (tagEnd < cleanedSql.length && cleanedSql[tagEnd] !== '$' && /[a-zA-Z0-9_]/.test(cleanedSql[tagEnd])) {
+        tagEnd++;
+      }
+      if (tagEnd < cleanedSql.length && cleanedSql[tagEnd] === '$') {
+        const tag = cleanedSql.substring(i, tagEnd + 1);
+        if (!inDollarQuote) {
+          inDollarQuote = true;
+          dollarTag = tag;
+        } else if (tag === dollarTag) {
+          inDollarQuote = false;
+          dollarTag = '';
+        }
+        current += cleanedSql.substring(i, tagEnd + 1);
+        i = tagEnd;
+        continue;
+      }
+    }
+    
+    // If we hit a semicolon outside dollar quotes, end the statement
+    if (char === ';' && !inDollarQuote) {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        statements.push(trimmed);
+      }
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  
+  // Don't forget the last statement if it doesn't end with semicolon
+  const trimmed = current.trim();
+  if (trimmed.length > 0) {
+    statements.push(trimmed);
+  }
+  
+  return statements;
+}
+
+/**
  * Run initial database setup from init.sql
  */
 async function runInitialSetup() {
@@ -106,11 +173,8 @@ async function runInitialSetup() {
   
   const sql = fs.readFileSync(initPath, 'utf8');
   
-  // Split by semicolons and run each statement
-  const statements = sql
-    .split(';')
-    .map(s => s.trim())
-    .filter(s => s.length > 0 && !s.startsWith('--'));
+  // Split by semicolons respecting dollar-quoted strings
+  const statements = splitSqlStatements(sql);
 
   for (const statement of statements) {
     try {

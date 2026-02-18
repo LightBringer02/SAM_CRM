@@ -23,8 +23,11 @@ const SECURITY_CONFIG = {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 500, // Max 500 requests per window for unauthenticated
     maxRequestsAuth: 2000, // Higher limit for authenticated users
-    strictEndpoints: ['/api/sync/trigger', '/api/backup/create'],
-    strictLimit: 50 // 50 requests per window for sensitive endpoints
+    strictEndpoints: ['/api/backup/create'], // Only backup create is strictly limited
+    strictLimit: 50, // 50 requests per window for sensitive endpoints
+    // Sync endpoints have their own higher limit
+    syncEndpoints: ['/api/sync', '/api/tally'],
+    syncLimit: 200 // Allow 200 sync requests per 15 min window
   },
   // Brute force protection
   bruteForce: {
@@ -89,10 +92,19 @@ function getClientId(req) {
  * Prevents API abuse and DDoS attacks
  */
 function rateLimiter(req, res, next) {
-  const clientId = getClientId(req);
+  const baseClientId = getClientId(req);
   const now = Date.now();
   const isAuthenticated = !!req.user;
   const isStrictEndpoint = SECURITY_CONFIG.rateLimit.strictEndpoints.some(ep => req.path.startsWith(ep));
+  const isSyncEndpoint = SECURITY_CONFIG.rateLimit.syncEndpoints.some(ep => req.path.startsWith(ep));
+  
+  // Use endpoint-specific keys so different endpoints have separate counters
+  let clientId = baseClientId;
+  if (isStrictEndpoint) {
+    clientId = `${baseClientId}:strict`;
+  } else if (isSyncEndpoint) {
+    clientId = `${baseClientId}:sync`;
+  }
   
   // Determine max requests based on context
   let maxRequests = isAuthenticated 
@@ -101,6 +113,8 @@ function rateLimiter(req, res, next) {
   
   if (isStrictEndpoint) {
     maxRequests = SECURITY_CONFIG.rateLimit.strictLimit;
+  } else if (isSyncEndpoint) {
+    maxRequests = SECURITY_CONFIG.rateLimit.syncLimit;
   }
   
   // Get or create rate limit entry
@@ -298,12 +312,18 @@ function blockSourceAccess(req, res, next) {
     '.lock', '.log', '.bak', '.config'
   ];
   
+  // Block direct file/folder access but allow API routes
   const blockedPaths = [
     '/node_modules', '/src/', '/routes/', '/middleware/', '/config/',
-    '/services/', '/database/', '/.git/', '/backup/', '/.env'
+    '/services/', '/database/', '/.git/', '/.env'
   ];
   
   const pathLower = req.path.toLowerCase();
+  
+  // Skip check for API routes - they are handled by express routers
+  if (pathLower.startsWith('/api/')) {
+    return next();
+  }
   
   // Check for blocked extensions in URL
   if (blockedExtensions.some(ext => pathLower.endsWith(ext))) {

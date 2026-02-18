@@ -219,7 +219,7 @@ export default function Reports() {
   };
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="p-6 min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>

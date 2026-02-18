@@ -23,7 +23,8 @@ import {
   Eye
 } from 'lucide-react';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:4000') + '/api';
+// Use relative path to leverage Vite proxy - this avoids CORS and network errors
+const API_BASE = '/api';
 
 // Status colors
 const STATUS_COLORS = {

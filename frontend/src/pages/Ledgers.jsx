@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import axios from "axios";
+import { useAuth } from "../auth";
 import { 
   UserCheck, 
   CreditCard, 
@@ -24,10 +25,25 @@ import {
   Save,
   X,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Ban,
+  ShieldAlert,
+  Pin,
+  PinOff
 } from "lucide-react";
 
-// Card configuration for each ledger group
+// Indian states list for dropdown
+const INDIAN_STATES = [
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
+];
+
+// Card configuration for each ledger group - All Tally groups
 const LEDGER_CARDS = [
   {
     key: "sundry-debtors",
@@ -57,7 +73,7 @@ const LEDGER_CARDS = [
   },
   {
     key: "cash",
-    name: "Cash",
+    name: "Cash-in-Hand",
     icon: Wallet,
     color: "green",
     bgLight: "bg-green-50",
@@ -70,7 +86,7 @@ const LEDGER_CARDS = [
   },
   {
     key: "bank",
-    name: "Bank",
+    name: "Bank Accounts",
     icon: Landmark,
     color: "purple",
     bgLight: "bg-purple-50",
@@ -80,34 +96,413 @@ const LEDGER_CARDS = [
     borderLight: "border-purple-200",
     borderDark: "dark:border-purple-800",
     description: "Bank accounts"
+  },
+  {
+    key: "bank-occ",
+    name: "Bank OCC A/c",
+    icon: Landmark,
+    color: "indigo",
+    bgLight: "bg-indigo-50",
+    bgDark: "dark:bg-indigo-900/20",
+    textLight: "text-indigo-700",
+    textDark: "dark:text-indigo-400",
+    borderLight: "border-indigo-200",
+    borderDark: "dark:border-indigo-800",
+    description: "Bank OCC accounts"
+  },
+  {
+    key: "bank-od",
+    name: "Bank OD A/c",
+    icon: Landmark,
+    color: "violet",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    textLight: "text-violet-700",
+    textDark: "dark:text-violet-400",
+    borderLight: "border-violet-200",
+    borderDark: "dark:border-violet-800",
+    description: "Bank overdraft accounts"
+  },
+  {
+    key: "capital-account",
+    name: "Capital Account",
+    icon: Building2,
+    color: "emerald",
+    bgLight: "bg-emerald-50",
+    bgDark: "dark:bg-emerald-900/20",
+    textLight: "text-emerald-700",
+    textDark: "dark:text-emerald-400",
+    borderLight: "border-emerald-200",
+    borderDark: "dark:border-emerald-800",
+    description: "Capital accounts"
+  },
+  {
+    key: "current-assets",
+    name: "Current Assets",
+    icon: TrendingUp,
+    color: "teal",
+    bgLight: "bg-teal-50",
+    bgDark: "dark:bg-teal-900/20",
+    textLight: "text-teal-700",
+    textDark: "dark:text-teal-400",
+    borderLight: "border-teal-200",
+    borderDark: "dark:border-teal-800",
+    description: "Current assets"
+  },
+  {
+    key: "current-liabilities",
+    name: "Current Liabilities",
+    icon: TrendingDown,
+    color: "rose",
+    bgLight: "bg-rose-50",
+    bgDark: "dark:bg-rose-900/20",
+    textLight: "text-rose-700",
+    textDark: "dark:text-rose-400",
+    borderLight: "border-rose-200",
+    borderDark: "dark:border-rose-800",
+    description: "Current liabilities"
+  },
+  {
+    key: "deposits",
+    name: "Deposits (Asset)",
+    icon: Landmark,
+    color: "cyan",
+    bgLight: "bg-cyan-50",
+    bgDark: "dark:bg-cyan-900/20",
+    textLight: "text-cyan-700",
+    textDark: "dark:text-cyan-400",
+    borderLight: "border-cyan-200",
+    borderDark: "dark:border-cyan-800",
+    description: "Deposit accounts"
+  },
+  {
+    key: "direct-expenses",
+    name: "Direct Expenses",
+    icon: CreditCard,
+    color: "red",
+    bgLight: "bg-red-50",
+    bgDark: "dark:bg-red-900/20",
+    textLight: "text-red-700",
+    textDark: "dark:text-red-400",
+    borderLight: "border-red-200",
+    borderDark: "dark:border-red-800",
+    description: "Direct expenses"
+  },
+  {
+    key: "direct-incomes",
+    name: "Direct Incomes",
+    icon: TrendingUp,
+    color: "lime",
+    bgLight: "bg-lime-50",
+    bgDark: "dark:bg-lime-900/20",
+    textLight: "text-lime-700",
+    textDark: "dark:text-lime-400",
+    borderLight: "border-lime-200",
+    borderDark: "dark:border-lime-800",
+    description: "Direct incomes"
+  },
+  {
+    key: "duties-taxes",
+    name: "Duties & Taxes",
+    icon: CreditCard,
+    color: "amber",
+    bgLight: "bg-amber-50",
+    bgDark: "dark:bg-amber-900/20",
+    textLight: "text-amber-700",
+    textDark: "dark:text-amber-400",
+    borderLight: "border-amber-200",
+    borderDark: "dark:border-amber-800",
+    description: "Duties and taxes"
+  },
+  {
+    key: "indirect-expenses",
+    name: "Indirect Expenses",
+    icon: CreditCard,
+    color: "pink",
+    bgLight: "bg-pink-50",
+    bgDark: "dark:bg-pink-900/20",
+    textLight: "text-pink-700",
+    textDark: "dark:text-pink-400",
+    borderLight: "border-pink-200",
+    borderDark: "dark:border-pink-800",
+    description: "Indirect expenses"
+  },
+  {
+    key: "indirect-incomes",
+    name: "Indirect Incomes",
+    icon: TrendingUp,
+    color: "sky",
+    bgLight: "bg-sky-50",
+    bgDark: "dark:bg-sky-900/20",
+    textLight: "text-sky-700",
+    textDark: "dark:text-sky-400",
+    borderLight: "border-sky-200",
+    borderDark: "dark:border-sky-800",
+    description: "Indirect incomes"
+  },
+  {
+    key: "fixed-assets",
+    name: "Fixed Assets",
+    icon: Building2,
+    color: "stone",
+    bgLight: "bg-stone-50",
+    bgDark: "dark:bg-stone-900/20",
+    textLight: "text-stone-700",
+    textDark: "dark:text-stone-400",
+    borderLight: "border-stone-200",
+    borderDark: "dark:border-stone-800",
+    description: "Fixed assets"
+  },
+  {
+    key: "investments",
+    name: "Investments",
+    icon: TrendingUp,
+    color: "fuchsia",
+    bgLight: "bg-fuchsia-50",
+    bgDark: "dark:bg-fuchsia-900/20",
+    textLight: "text-fuchsia-700",
+    textDark: "dark:text-fuchsia-400",
+    borderLight: "border-fuchsia-200",
+    borderDark: "dark:border-fuchsia-800",
+    description: "Investment accounts"
+  },
+  {
+    key: "loans-advances",
+    name: "Loans & Advances (Asset)",
+    icon: CreditCard,
+    color: "yellow",
+    bgLight: "bg-yellow-50",
+    bgDark: "dark:bg-yellow-900/20",
+    textLight: "text-yellow-700",
+    textDark: "dark:text-yellow-400",
+    borderLight: "border-yellow-200",
+    borderDark: "dark:border-yellow-800",
+    description: "Loans and advances (asset)"
+  },
+  {
+    key: "loans-liability",
+    name: "Loans (Liability)",
+    icon: CreditCard,
+    color: "orange",
+    bgLight: "bg-orange-50",
+    bgDark: "dark:bg-orange-900/20",
+    textLight: "text-orange-700",
+    textDark: "dark:text-orange-400",
+    borderLight: "border-orange-200",
+    borderDark: "dark:border-orange-800",
+    description: "Loan liabilities"
+  },
+  {
+    key: "provisions",
+    name: "Provisions",
+    icon: Wallet,
+    color: "gray",
+    bgLight: "bg-gray-50",
+    bgDark: "dark:bg-gray-900/20",
+    textLight: "text-gray-700",
+    textDark: "dark:text-gray-400",
+    borderLight: "border-gray-200",
+    borderDark: "dark:border-gray-800",
+    description: "Provision accounts"
+  },
+  {
+    key: "purchase-accounts",
+    name: "Purchase Accounts",
+    icon: CreditCard,
+    color: "red",
+    bgLight: "bg-red-50",
+    bgDark: "dark:bg-red-900/20",
+    textLight: "text-red-700",
+    textDark: "dark:text-red-400",
+    borderLight: "border-red-200",
+    borderDark: "dark:border-red-800",
+    description: "Purchase accounts"
+  },
+  {
+    key: "reserves-surplus",
+    name: "Reserves & Surplus",
+    icon: Landmark,
+    color: "emerald",
+    bgLight: "bg-emerald-50",
+    bgDark: "dark:bg-emerald-900/20",
+    textLight: "text-emerald-700",
+    textDark: "dark:text-emerald-400",
+    borderLight: "border-emerald-200",
+    borderDark: "dark:border-emerald-800",
+    description: "Reserves and surplus"
+  },
+  {
+    key: "sales-accounts",
+    name: "Sales Accounts",
+    icon: TrendingUp,
+    color: "green",
+    bgLight: "bg-green-50",
+    bgDark: "dark:bg-green-900/20",
+    textLight: "text-green-700",
+    textDark: "dark:text-green-400",
+    borderLight: "border-green-200",
+    borderDark: "dark:border-green-800",
+    description: "Sales accounts"
+  },
+  {
+    key: "secured-loans",
+    name: "Secured Loans",
+    icon: CreditCard,
+    color: "amber",
+    bgLight: "bg-amber-50",
+    bgDark: "dark:bg-amber-900/20",
+    textLight: "text-amber-700",
+    textDark: "dark:text-amber-400",
+    borderLight: "border-amber-200",
+    borderDark: "dark:border-amber-800",
+    description: "Secured loan accounts"
+  },
+  {
+    key: "unsecured-loans",
+    name: "Unsecured Loans",
+    icon: CreditCard,
+    color: "rose",
+    bgLight: "bg-rose-50",
+    bgDark: "dark:bg-rose-900/20",
+    textLight: "text-rose-700",
+    textDark: "dark:text-rose-400",
+    borderLight: "border-rose-200",
+    borderDark: "dark:border-rose-800",
+    description: "Unsecured loan accounts"
+  },
+  {
+    key: "suspense",
+    name: "Suspense A/c",
+    icon: AlertCircle,
+    color: "slate",
+    bgLight: "bg-slate-50",
+    bgDark: "dark:bg-slate-900/20",
+    textLight: "text-slate-700",
+    textDark: "dark:text-slate-400",
+    borderLight: "border-slate-200",
+    borderDark: "dark:border-slate-800",
+    description: "Suspense accounts"
+  },
+  {
+    key: "stock-in-hand",
+    name: "Stock-in-Hand",
+    icon: Wallet,
+    color: "cyan",
+    bgLight: "bg-cyan-50",
+    bgDark: "dark:bg-cyan-900/20",
+    textLight: "text-cyan-700",
+    textDark: "dark:text-cyan-400",
+    borderLight: "border-cyan-200",
+    borderDark: "dark:border-cyan-800",
+    description: "Stock in hand"
+  },
+  {
+    key: "branch-divisions",
+    name: "Branch / Divisions",
+    icon: Building2,
+    color: "violet",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    textLight: "text-violet-700",
+    textDark: "dark:text-violet-400",
+    borderLight: "border-violet-200",
+    borderDark: "dark:border-violet-800",
+    description: "Branch and division accounts"
+  },
+  {
+    key: "misc-expenses",
+    name: "Misc. Expenses (ASSET)",
+    icon: CreditCard,
+    color: "neutral",
+    bgLight: "bg-neutral-50",
+    bgDark: "dark:bg-neutral-900/20",
+    textLight: "text-neutral-700",
+    textDark: "dark:text-neutral-400",
+    borderLight: "border-neutral-200",
+    borderDark: "dark:border-neutral-800",
+    description: "Miscellaneous expenses (asset)"
+  },
+  {
+    key: "retained-earnings",
+    name: "Retained Earnings",
+    icon: TrendingUp,
+    color: "teal",
+    bgLight: "bg-teal-50",
+    bgDark: "dark:bg-teal-900/20",
+    textLight: "text-teal-700",
+    textDark: "dark:text-teal-400",
+    borderLight: "border-teal-200",
+    borderDark: "dark:border-teal-800",
+    description: "Retained earnings"
   }
 ];
 
-// Format currency with Dr/Cr suffix
-function formatCurrency(amount, showDrCr = false) {
-  // Parse the amount - handle string values with symbols
-  let num = parseFloat(amount);
-  if (isNaN(num)) num = 0;
-  
-  // If amount seems unreasonably large (likely in paise), divide by 100
-  // This handles cases where Tally returns amounts in paise
-  // Note: 1 Crore = 1,00,00,000 - if balance > 1000 Cr (10 billion paise), it's likely in paise
-  // Heuristic: values > 1 trillion are likely in paise
-  // Actually safer to NOT auto-divide as it may break valid large values
-  
-  const isNegative = num < 0;
-  const absNum = Math.abs(num);
-  
-  // Format in Indian number system
-  const formatted = absNum.toLocaleString('en-IN', { 
-    minimumFractionDigits: 2, 
-    maximumFractionDigits: 2 
-  });
-  
-  if (showDrCr) {
-    return isNegative ? `₹${formatted} Cr` : `₹${formatted} Dr`;
+// Determine the balance side (Dr/Cr) using available metadata
+function resolveBalanceSide(rawAmount, options = {}) {
+  if (options.side) return options.side;
+
+  if (typeof options.isReceivable === 'boolean') {
+    return options.isReceivable ? 'Dr' : 'Cr';
   }
-  return isNegative ? `- ₹${formatted}` : `₹${formatted}`;
+  if (typeof options.isPayable === 'boolean') {
+    return options.isPayable ? 'Cr' : 'Dr';
+  }
+
+  if (options.ledger) {
+    const ledger = options.ledger;
+    if (typeof ledger.isReceivable === 'boolean') {
+      return ledger.isReceivable ? 'Dr' : 'Cr';
+    }
+    if (typeof ledger.isPayable === 'boolean') {
+      return ledger.isPayable ? 'Cr' : 'Dr';
+    }
+    if (ledger.balance_side) {
+      const side = ledger.balance_side.toString().toUpperCase();
+      if (side.includes('CR')) return 'Cr';
+      if (side.includes('DR')) return 'Dr';
+    }
+  }
+
+  const numericRaw = parseFloat(rawAmount);
+  if (!Number.isNaN(numericRaw) && numericRaw !== 0) {
+    return numericRaw > 0 ? 'Cr' : 'Dr';
+  }
+
+  return options.defaultSide || 'Dr';
+}
+
+// Format ledger balances with optional Dr/Cr suffix and metadata
+function formatLedgerBalance(amount, options = {}) {
+  let numeric = parseFloat(amount);
+  if (Number.isNaN(numeric)) numeric = 0;
+
+  const divideBy = options.divideBy || 1;
+  const normalized = numeric / divideBy;
+  const side = resolveBalanceSide(amount, options);
+
+  const formatted = Math.abs(normalized).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
+  if (options.showDrCr === false) {
+    const prefix = normalized < 0 ? '- ₹' : '₹';
+    return { text: `${prefix}${formatted}`, side, value: normalized };
+  }
+
+  return { text: `₹${formatted} ${side}`, side, value: normalized };
+}
+
+// Backwards-compatible currency formatter
+function formatCurrency(amount, showDrCr = false, options = {}) {
+  const meta = formatLedgerBalance(amount, { ...options, showDrCr });
+  return meta.text;
+}
+
+function balanceColorClass(side) {
+  return side === 'Cr'
+    ? 'text-red-600 dark:text-red-400'
+    : 'text-green-600 dark:text-green-400';
 }
 
 // Recently Accessed Ledgers Component
@@ -146,6 +541,7 @@ function RecentlyAccessedLedgers({ onSelectLedger }) {
 
 // Summary Cards View (main ledgers page)
 function LedgerSummaryCards() {
+  const { user, isAdminOrHigher, hasPermission } = useAuth();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -153,15 +549,60 @@ function LedgerSummaryCards() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [message, setMessage] = useState(null);
+  const [blacklistedLedgers, setBlacklistedLedgers] = useState([]);
+  const [pinnedCards, setPinnedCards] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ledger_pinned_cards');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [newLedger, setNewLedger] = useState({
     name: "", group: "Sundry Debtors", address: "", phone: "", email: "", 
     gstin: "", gst_type: "Regular", state: "", pincode: ""
   });
   const navigate = useNavigate();
+  
+  // Check if user can see blacklisted ledgers (admin or has permission)
+  const canSeeBlacklisted = isAdminOrHigher() || hasPermission('view_blacklisted_ledgers');
+
+  // Toggle pin for a card (max 4 pins)
+  const togglePinCard = (cardKey, e) => {
+    e.stopPropagation();
+    setPinnedCards(prev => {
+      let newPins;
+      if (prev.includes(cardKey)) {
+        newPins = prev.filter(k => k !== cardKey);
+      } else if (prev.length < 4) {
+        newPins = [...prev, cardKey];
+      } else {
+        // Max 4 pins - replace oldest
+        newPins = [...prev.slice(1), cardKey];
+      }
+      localStorage.setItem('ledger_pinned_cards', JSON.stringify(newPins));
+      return newPins;
+    });
+  };
+
+  // Sort cards: pinned first, then others
+  const sortedLedgerCards = [...LEDGER_CARDS].sort((a, b) => {
+    const aIsPinned = pinnedCards.includes(a.key);
+    const bIsPinned = pinnedCards.includes(b.key);
+    if (aIsPinned && !bIsPinned) return -1;
+    if (!aIsPinned && bIsPinned) return 1;
+    return 0;
+  });
 
   useEffect(() => {
     fetchSummary();
+    loadBlacklistedLedgers();
   }, []);
+
+  const loadBlacklistedLedgers = () => {
+    try {
+      const stored = localStorage.getItem('crm_blacklisted_ledgers');
+      setBlacklistedLedgers(stored ? JSON.parse(stored) : []);
+    } catch { setBlacklistedLedgers([]); }
+  };
 
   const fetchSummary = async () => {
     setLoading(true);
@@ -252,30 +693,90 @@ function LedgerSummaryCards() {
         </div>
       </div>
 
+      {/* Blacklisted Ledgers Card - Admin only - AT TOP - Always show for admins */}
+      {canSeeBlacklisted && (
+        <div 
+          onClick={() => navigate('/ledgers/blacklisted')}
+          className="p-6 rounded-xl border-2 border-dashed border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 cursor-pointer transition-all hover:shadow-lg hover:border-red-400"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/40">
+              <ShieldAlert className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-red-700 dark:text-red-400">Blacklisted Ledgers</h3>
+              <p className="text-sm text-red-600/70 dark:text-red-400/70">
+                {blacklistedLedgers.length > 0 
+                  ? `${blacklistedLedgers.length} ledgers marked - Admin access only`
+                  : 'No ledgers blacklisted - Click to manage'}
+              </p>
+              {/* Show recently added blacklisted ledgers (last 5) */}
+              {blacklistedLedgers.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {blacklistedLedgers.slice(0, 5).map((ledger, idx) => (
+                    <span key={idx} className="text-xs bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 px-2 py-1 rounded">
+                      {ledger.name || ledger}
+                    </span>
+                  ))}
+                  {blacklistedLedgers.length > 5 && (
+                    <span className="text-xs text-red-500">+{blacklistedLedgers.length - 5} more</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <Ban className="w-5 h-5 text-red-500" />
+          </div>
+        </div>
+      )}
+
       {/* Recently Accessed */}
       <RecentlyAccessedLedgers onSelectLedger={handleSelectRecentLedger} />
 
-      {/* Ledger Type Cards */}
+      {/* Ledger Type Cards - Pinned cards show first */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {LEDGER_CARDS.map(card => {
+        {sortedLedgerCards.map(card => {
           const Icon = card.icon;
           const data = summary?.[card.key] || { count: 0, openingBalance: 0, closingBalance: 0 };
-          const balanceChange = data.closingBalance - data.openingBalance;
-          const isPositive = balanceChange >= 0;
+          // For debtors, positive = receivable. For creditors, negative = payable.
+          const isDebtors = card.key === 'sundry-debtors';
+          const isCreditors = card.key === 'sundry-creditors';
+          // Show absolute closing balance as "Total Receivable" for debtors, "Total Payable" for creditors
+          // Divide by 100 to convert from paise to rupees
+          const totalBalance = Math.abs((data.closingBalance || 0) / 100);
+          const balanceLabel = isDebtors ? 'Total Receivable' : isCreditors ? 'Total Payable' : 'Balance';
+
+          // Use the count directly from backend (already deduplicated)
+          const ledgerCount = typeof data.count === 'number' ? data.count : 0;
+          const isPinned = pinnedCards.includes(card.key);
 
           return (
             <div
               key={card.key}
               onClick={() => navigate(`/ledgers/${card.key}`)}
-              className={`p-6 rounded-xl border cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02]
-                ${card.bgLight} ${card.bgDark} ${card.borderLight} ${card.borderDark}`}
+              className={`p-6 rounded-xl border cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] relative
+                ${card.bgLight} ${card.bgDark} ${card.borderLight} ${card.borderDark}
+                ${isPinned ? 'ring-2 ring-yellow-400 dark:ring-yellow-500' : ''}`}
             >
+              {/* Pin Button */}
+              <button
+                onClick={(e) => togglePinCard(card.key, e)}
+                className={`absolute top-2 right-2 p-1.5 rounded-full transition-all ${
+                  isPinned 
+                    ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400' 
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 opacity-0 group-hover:opacity-100'
+                }`}
+                style={{ opacity: isPinned ? 1 : undefined }}
+                title={isPinned ? 'Unpin card' : 'Pin card (max 4)'}
+              >
+                {isPinned ? <Pin className="w-4 h-4" /> : <PinOff className="w-4 h-4" />}
+              </button>
+              
               <div className="flex items-start justify-between mb-4">
                 <div className={`p-3 rounded-lg ${card.bgLight} ${card.bgDark}`}>
                   <Icon className={`w-6 h-6 ${card.textLight} ${card.textDark}`} />
                 </div>
                 <span className={`text-2xl font-bold ${card.textLight} ${card.textDark}`}>
-                  {data.count}
+                  {ledgerCount}
                 </span>
               </div>
               
@@ -288,17 +789,14 @@ function LedgerSummaryCards() {
 
               <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-gray-700">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Closing Balance</span>
-                  <span className="font-medium text-gray-900 dark:text-white">
-                    {formatCurrency(data.closingBalance)}
+                  <span className="text-gray-600 dark:text-gray-400">{balanceLabel}</span>
+                  <span className={`font-medium ${isDebtors ? 'text-green-600 dark:text-green-400' : isCreditors ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                    {formatCurrency(totalBalance)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Change</span>
-                  <span className={`flex items-center gap-1 font-medium ${isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                    {formatCurrency(Math.abs(balanceChange))}
-                  </span>
+                  <span className="text-gray-600 dark:text-gray-400">Parties</span>
+                  <span className="text-gray-900 dark:text-white font-medium">{ledgerCount} ledgers</span>
                 </div>
               </div>
             </div>
@@ -317,31 +815,117 @@ function LedgerSummaryCards() {
       {/* Create Ledger Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center sticky top-0 bg-white dark:bg-gray-800 z-10">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add Ledger to Tally</h2>
               <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2"><label className="block text-sm font-medium mb-1">Ledger Name *</label><input type="text" value={newLedger.name} onChange={(e) => setNewLedger({...newLedger, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Party/Company name" /></div>
-                <div><label className="block text-sm font-medium mb-1">Group</label><select value={newLedger.group} onChange={(e) => setNewLedger({...newLedger, group: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"><option value="Sundry Debtors">Sundry Debtors</option><option value="Sundry Creditors">Sundry Creditors</option><option value="Bank Accounts">Bank Accounts</option><option value="Cash-in-Hand">Cash-in-Hand</option></select></div>
-                <div><label className="block text-sm font-medium mb-1">GST Type</label><select value={newLedger.gst_type} onChange={(e) => setNewLedger({...newLedger, gst_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"><option value="Regular">Regular</option><option value="Composition">Composition</option><option value="Consumer">Consumer</option><option value="Unregistered">Unregistered</option></select></div>
+            <div className="p-6 space-y-6">
+              {/* Basic Details */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                  <Building2 className="w-4 h-4" /> Basic Details
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-1">Ledger Name *</label>
+                    <input type="text" value={newLedger.name} onChange={(e) => setNewLedger({...newLedger, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Party/Company name" autoFocus />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Group *</label>
+                    <select value={newLedger.group} onChange={(e) => setNewLedger({...newLedger, group: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                      <option value="Sundry Debtors">Sundry Debtors</option>
+                      <option value="Sundry Creditors">Sundry Creditors</option>
+                      <option value="Bank Accounts">Bank Accounts</option>
+                      <option value="Cash-in-Hand">Cash-in-Hand</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">GST Type</label>
+                    <select value={newLedger.gst_type} onChange={(e) => setNewLedger({...newLedger, gst_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                      <option value="Regular">Regular</option>
+                      <option value="Composition">Composition</option>
+                      <option value="Consumer">Consumer</option>
+                      <option value="Unregistered">Unregistered</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <div><label className="block text-sm font-medium mb-1">GSTIN</label><input type="text" value={newLedger.gstin} onChange={(e) => setNewLedger({...newLedger, gstin: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="GSTIN number" /></div>
-              <div><label className="block text-sm font-medium mb-1">Address</label><textarea value={newLedger.address} onChange={(e) => setNewLedger({...newLedger, address: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" rows={2} /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium mb-1">Phone</label><input type="tel" value={newLedger.phone} onChange={(e) => setNewLedger({...newLedger, phone: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
-                <div><label className="block text-sm font-medium mb-1">Email</label><input type="email" value={newLedger.email} onChange={(e) => setNewLedger({...newLedger, email: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+
+              {/* GST Details */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">GST Details</h3>
+                <div>
+                  <label className="block text-sm font-medium mb-1">GSTIN</label>
+                  <input type="text" value={newLedger.gstin} onChange={(e) => setNewLedger({...newLedger, gstin: e.target.value.toUpperCase()})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="22AAAAA0000A1Z5" maxLength={15} />
+                  {newLedger.gstin && newLedger.gstin.length !== 15 && <p className="text-xs text-orange-500 mt-1">GSTIN should be 15 characters</p>}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium mb-1">State</label><input type="text" value={newLedger.state} onChange={(e) => setNewLedger({...newLedger, state: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
-                <div><label className="block text-sm font-medium mb-1">Pincode</label><input type="text" value={newLedger.pincode} onChange={(e) => setNewLedger({...newLedger, pincode: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+
+              {/* Contact Details */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                  <Phone className="w-4 h-4" /> Contact Details
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Phone</label>
+                    <input 
+                      type="tel" 
+                      value={newLedger.phone} 
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9+\-\s]/g, '');
+                        setNewLedger({...newLedger, phone: val});
+                      }}
+                      className={`w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 ${newLedger.phone && !/^[\d\s+\-]{10,15}$/.test(newLedger.phone) ? 'border-red-500' : ''}`}
+                      placeholder="+91 XXXXX XXXXX"
+                    />
+                    {newLedger.phone && !/^[\d\s+\-]{10,15}$/.test(newLedger.phone) && <p className="text-xs text-red-500 mt-1">Invalid phone format</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email</label>
+                    <input 
+                      type="email" 
+                      value={newLedger.email} 
+                      onChange={(e) => setNewLedger({...newLedger, email: e.target.value})}
+                      className={`w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 ${newLedger.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newLedger.email) ? 'border-red-500' : ''}`}
+                      placeholder="email@example.com"
+                    />
+                    {newLedger.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newLedger.email) && <p className="text-xs text-red-500 mt-1">Invalid email format</p>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Address Details */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                  <MapPin className="w-4 h-4" /> Address Details
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Address</label>
+                    <textarea value={newLedger.address} onChange={(e) => setNewLedger({...newLedger, address: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" rows={2} placeholder="Street address, Area, Landmark" />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">State</label>
+                      <select value={newLedger.state} onChange={(e) => setNewLedger({...newLedger, state: e.target.value})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                        <option value="">Select State...</option>
+                        {INDIAN_STATES.map(state => <option key={state} value={state}>{state}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Pincode</label>
+                      <input type="text" value={newLedger.pincode} onChange={(e) => setNewLedger({...newLedger, pincode: e.target.value.replace(/\D/g, '').slice(0, 6)})} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="110001" maxLength={6} />
+                      {newLedger.pincode && newLedger.pincode.length !== 6 && <p className="text-xs text-orange-500 mt-1">Pincode should be 6 digits</p>}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3 sticky bottom-0 bg-white dark:bg-gray-800">
               <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">Cancel</button>
-              <button onClick={handleCreateLedger} disabled={createLoading} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" />{createLoading ? 'Creating...' : 'Create in Tally'}</button>
+              <button onClick={handleCreateLedger} disabled={createLoading || !newLedger.name || (newLedger.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newLedger.email)) || (newLedger.phone && !/^[\d\s+\-]{10,15}$/.test(newLedger.phone))} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Save className="w-4 h-4" />{createLoading ? 'Creating...' : 'Create in Tally'}</button>
             </div>
           </div>
         </div>
@@ -488,11 +1072,56 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
   const [vouchers, setVouchers] = useState([]);
   const [loadingVouchers, setLoadingVouchers] = useState(false);
   const [voucherCount, setVoucherCount] = useState(0);
-  const [activeTab, setActiveTab] = useState('details'); // 'details' or 'vouchers'
+  const [activeTab, setActiveTab] = useState('vouchers'); // Default to vouchers tab
   const [vouchersFetched, setVouchersFetched] = useState(false);
   const [filterPeriod, setFilterPeriod] = useState('all'); // 'all', 'month', 'session'
   const [selectedVoucher, setSelectedVoucher] = useState(null); // For voucher detail modal
   const navigate = useNavigate();
+
+  const rawOpeningBalance = parseFloat(ledger?.opening_balance ?? ledger?.openingBalance ?? 0);
+  const rawClosingBalance = parseFloat(ledger?.closing_balance ?? ledger?.closingBalance ?? 0);
+
+  const openingSummary = formatLedgerBalance(rawOpeningBalance, {
+    divideBy: 100,
+    showDrCr: true,
+    defaultSide: rawOpeningBalance >= 0 ? 'Cr' : 'Dr'
+  });
+  const closingSummary = formatLedgerBalance(rawClosingBalance, {
+    divideBy: 100,
+    showDrCr: true,
+    ledger
+  });
+  const netMovementMeta = formatLedgerBalance(rawClosingBalance - rawOpeningBalance, {
+    divideBy: 100,
+    showDrCr: true,
+    defaultSide: rawClosingBalance - rawOpeningBalance >= 0 ? 'Cr' : 'Dr'
+  });
+
+  const ledgerGstin = (ledger?.gstin || ledger?.gst_number || ledger?.gstNo || ledger?.party_gstin || ledger?.GSTIN || '').toString().toUpperCase();
+  const ledgerGstType = ledger?.gst_type || ledger?.gstType || ledger?.gst_registration_type || ledger?.registration_type || '';
+  const ledgerGstStatus = ledger?.gst_registration_status || ledger?.registration_status || ledger?.gst_category || '';
+  const ledgerPlaceOfSupply = ledger?.place_of_supply || ledger?.placeOfSupply || '';
+  const ledgerState = ledger?.state || ledger?.state_name || ledger?.stateName || ledgerPlaceOfSupply || '';
+  const ledgerCountry = ledger?.country || ledger?.countryName || '';
+  const ledgerPincode = ledger?.pincode || ledger?.postal_code || ledger?.zip || '';
+  const ledgerPan = ledger?.pan || ledger?.PAN || ledger?.pan_number || '';
+
+  const gstInfoFields = [];
+  const addInfoField = (label, value) => {
+    if (!value) return;
+    const displayValue = typeof value === 'string' ? value.trim() : value;
+    if (!displayValue) return;
+    gstInfoFields.push({ label, value: displayValue });
+  };
+
+  addInfoField('GSTIN', ledgerGstin);
+  addInfoField('GST Type', ledgerGstType);
+  addInfoField('GST Registration', ledgerGstStatus);
+  addInfoField('Place of Supply', ledgerPlaceOfSupply || ledgerState);
+  addInfoField('State', ledgerState);
+  addInfoField('Country', ledgerCountry);
+  addInfoField('Pincode', ledgerPincode);
+  addInfoField('PAN', ledgerPan);
   
   // Determine if this is a bank/cash type ledger
   const isBankOrCash = groupKey === 'bank' || groupKey === 'cash';
@@ -519,7 +1148,7 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
     return true;
   });
 
-  // Fetch voucher count on mount
+  // Fetch voucher count on mount and auto-fetch vouchers since vouchers tab is default
   useEffect(() => {
     const fetchVoucherCount = async () => {
       try {
@@ -543,6 +1172,8 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
     };
     
     fetchVoucherCount();
+    // Auto-fetch vouchers on mount since vouchers tab is default
+    fetchVouchers();
   }, [ledger.name]);
 
   // Fetch full vouchers when tab is clicked
@@ -743,18 +1374,8 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs - Vouchers first, Details second */}
         <div className="flex border-b border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => setActiveTab('details')}
-            className={`px-6 py-3 text-sm font-medium transition ${
-              activeTab === 'details' 
-                ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400' 
-                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-            }`}
-          >
-            Details
-          </button>
           <button
             onClick={() => {
               setActiveTab('vouchers');
@@ -767,6 +1388,16 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
             }`}
           >
             Vouchers ({vouchersFetched ? vouchers.length : voucherCount})
+          </button>
+          <button
+            onClick={() => setActiveTab('details')}
+            className={`px-6 py-3 text-sm font-medium transition ${
+              activeTab === 'details' 
+                ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400' 
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+            }`}
+          >
+            Details
           </button>
         </div>
 
@@ -804,32 +1435,35 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                {ledger.gstin && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">GSTIN</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{ledger.gstin}</p>
-                  </div>
-                )}
-                {ledger.pan && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">PAN</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{ledger.pan}</p>
-                  </div>
-                )}
-              </div>
+              {gstInfoFields.length > 0 && (
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  {gstInfoFields.map(field => (
+                    <div key={field.label}>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{field.label}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{field.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Opening Balance</p>
-                  <p className={`text-xl font-bold ${(ledger.opening_balance || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                    {formatCurrency(ledger.opening_balance)}
+              {/* Balance Summary - Like Tally's Opening/Current/Closing */}
+              <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <p className="text-sm text-blue-700 dark:text-blue-400">Opening Balance</p>
+                  <p className={`text-xl font-bold ${balanceColorClass(openingSummary.side)}`}>
+                    {openingSummary.text}
                   </p>
                 </div>
-                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Closing Balance</p>
-                  <p className={`text-xl font-bold ${(ledger.closing_balance || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                    {formatCurrency(ledger.closing_balance)}
+                <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <p className="text-sm text-purple-700 dark:text-purple-400">Transaction Total</p>
+                  <p className={`text-xl font-bold ${balanceColorClass(netMovementMeta.side)}`}>
+                    {netMovementMeta.text}
+                  </p>
+                </div>
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                  <p className="text-sm text-emerald-700 dark:text-emerald-400">Closing Balance</p>
+                  <p className={`text-xl font-bold ${balanceColorClass(closingSummary.side)}`}>
+                    {closingSummary.text}
                   </p>
                 </div>
               </div>
@@ -1097,16 +1731,29 @@ function LedgerListView({ groupKey }) {
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-700/50">
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Name</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">Opening</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">Closing</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Contact</th>
+                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">Opening Balance</th>
+                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">Closing Balance</th>
                 {!isBankOrCash && (
                   <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                 )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {ledgers.map((ledger, idx) => (
-                <tr 
+              {ledgers.map((ledger, idx) => {
+                const openingMeta = formatLedgerBalance(ledger.opening_balance, {
+                  divideBy: 100,
+                  showDrCr: true,
+                  ledger,
+                  defaultSide: 'Dr'
+                });
+                const closingMeta = formatLedgerBalance(ledger.closing_balance, {
+                  divideBy: 100,
+                  showDrCr: true,
+                  ledger
+                });
+                return (
+                  <tr
                   key={ledger.name || idx}
                   onClick={() => handleSelectLedger(ledger)}
                   className="hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer transition"
@@ -1117,14 +1764,31 @@ function LedgerListView({ groupKey }) {
                       <div className="text-xs text-gray-500 dark:text-gray-400">GSTIN: {ledger.gstin}</div>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    {ledger.phone && (
+                      <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
+                        <Phone className="w-3 h-3" />
+                        {ledger.phone}
+                      </div>
+                    )}
+                    {ledger.email && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500">
+                        <Mail className="w-3 h-3" />
+                        {ledger.email}
+                      </div>
+                    )}
+                    {!ledger.phone && !ledger.email && (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`font-medium ${(ledger.opening_balance || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrency(ledger.opening_balance, true)}
+                    <span className={`font-medium ${balanceColorClass(openingMeta.side)}`}>
+                      {openingMeta.text}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`font-medium ${(ledger.closing_balance || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrency(ledger.closing_balance, true)}
+                    <span className={`font-bold ${balanceColorClass(closingMeta.side)}`}>
+                      {closingMeta.text}
                     </span>
                   </td>
                   {!isBankOrCash && (
@@ -1173,8 +1837,9 @@ function LedgerListView({ groupKey }) {
                       </div>
                     </td>
                   )}
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -1224,7 +1889,7 @@ export default function Ledgers() {
   // If a group is specified, show ledger list
   if (group) {
     return (
-      <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+      <div className="min-h-screen">
         <LedgerListView groupKey={group} />
       </div>
     );
@@ -1232,7 +1897,7 @@ export default function Ledgers() {
 
   // Otherwise show summary cards
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="min-h-screen">
       <LedgerSummaryCards />
     </div>
   );

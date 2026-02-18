@@ -3,6 +3,60 @@
 /* Enable class-based dark mode for Tailwind v4 */
 @variant dark (&:where(.dark, .dark *));
 
+/* Theme CSS Variables - Applied by ThemeProvider */
+:root {
+  --theme-base: #f0f4ff;
+  --theme-surface: #ffffff;
+  --theme-surface-alt: #f8fafc;
+  --theme-primary: #4f46e5;
+  --theme-primary-hover: #4338ca;
+  --theme-accent: #7c3aed;
+  --theme-text: #1e293b;
+  --theme-text-muted: #64748b;
+  --theme-border: #cbd5e1;
+}
+
+/* Theme utility classes */
+.bg-theme-base { background-color: var(--theme-base) !important; }
+.bg-theme-surface { background-color: var(--theme-surface) !important; }
+.bg-theme-surface-alt { background-color: var(--theme-surface-alt) !important; }
+.bg-theme-primary { background-color: var(--theme-primary) !important; }
+.text-theme { color: var(--theme-text) !important; }
+.text-theme-muted { color: var(--theme-text-muted) !important; }
+.border-theme { border-color: var(--theme-border) !important; }
+
+/* Override bg-white and dark:bg-gray-* to use theme colors */
+/* This makes ALL existing pages instantly theme-aware */
+@layer base {
+  /* Page backgrounds - use theme base */
+  .bg-white:not(.invoice-print-area):not(.print-white):not([data-keep-white]) {
+    background-color: var(--theme-surface-alt);
+  }
+  
+  /* Dark mode equivalents */
+  .dark .dark\:bg-gray-900:not(.invoice-print-area):not(.print-white):not([data-keep-white]),
+  .dark .dark\:bg-gray-800:not(.invoice-print-area):not(.print-white):not([data-keep-white]) {
+    background-color: var(--theme-surface-alt);
+  }
+  
+  /* Border overrides */
+  .dark .dark\:border-gray-700,
+  .dark .dark\:border-gray-600 {
+    border-color: var(--theme-border);
+  }
+  
+  /* Text overrides in dark mode for themed pages */
+  .dark .dark\:text-gray-100,
+  .dark .dark\:text-white {
+    color: var(--theme-text);
+  }
+  
+  .dark .dark\:text-gray-400,
+  .dark .dark\:text-gray-500 {
+    color: var(--theme-text-muted);
+  }
+}
+
 @layer utilities {
   @keyframes fade-in {
     from { opacity: 0; transform: translateY(5px); }

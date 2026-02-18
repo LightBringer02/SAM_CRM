@@ -18,6 +18,13 @@ const LEDGER_GROUPS = {
   'bank': ['Bank Accounts', 'Bank OD A/c', 'Bank OCC A/c']
 };
 
+const normalizeGroupName = (name = '') =>
+  name
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
 /**
  * GET /api/vendors/ledgers/:group
  * Fetch ledgers by group (sundry-debtors, sundry-creditors, cash, bank)
@@ -44,10 +51,10 @@ router.get('/ledgers/:group', async (req, res) => {
       try {
         const allLedgers = await tallySyncService.fetchLedgersFromTally();
         
-        // Filter by parent group
+        // Filter by parent group - use EXACT matching
         ledgers = allLedgers.filter(l => {
-          const parent = (l.parent || '').toLowerCase();
-          return groupNames.some(g => parent.includes(g.toLowerCase()));
+          const parent = normalizeGroupName(l.parent);
+          return groupNames.some(g => parent === normalizeGroupName(g));
         });
         
         // Sync to database for offline use
@@ -65,8 +72,8 @@ router.get('/ledgers/:group', async (req, res) => {
       if (tallySyncService) {
         const allDbLedgers = await tallySyncService.getLedgersFromDb();
         ledgers = allDbLedgers.filter(l => {
-          const parent = (l.parent || '').toLowerCase();
-          return groupNames.some(g => parent.includes(g.toLowerCase()));
+          const parent = normalizeGroupName(l.parent);
+          return groupNames.some(g => parent === normalizeGroupName(g));
         });
         fromDatabase = true;
       }
@@ -144,8 +151,8 @@ router.get('/summary', async (req, res) => {
     const summary = {};
     for (const [groupKey, groupNames] of Object.entries(LEDGER_GROUPS)) {
       const groupLedgers = allLedgers.filter(l => {
-        const parent = (l.parent || '').toLowerCase();
-        return groupNames.some(g => parent.includes(g.toLowerCase()));
+        const parent = normalizeGroupName(l.parent);
+        return groupNames.some(g => parent === normalizeGroupName(g));
       });
       
       const totalOpening = groupLedgers.reduce((sum, l) => sum + (parseFloat(l.opening_balance) || 0), 0);

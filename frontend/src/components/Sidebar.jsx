@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
   Boxes,
@@ -30,7 +31,7 @@ import {
   PanelLeft,
   Plug,
 } from "lucide-react";
-// import { useTheme } from "../theme.jsx";
+import { useTheme } from "../theme.jsx";
 import { useAuth } from "../auth.jsx";
 
 const navItems = [
@@ -60,9 +61,10 @@ export default function Sidebar({ collapsed, setCollapsed }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [ledgersExpanded, setLedgersExpanded] = useState(false);
   const [ledgersHovered, setLedgersHovered] = useState(false);
-  // const { dark, setDark } = useTheme();
+  const { currentTheme, dark } = useTheme();
   const { user, logout } = useAuth();
   const menuRef = useRef(null);
+  const menuPortalRef = useRef(null);
   const ledgersRef = useRef(null);
   
   // Get profile image from localStorage
@@ -93,14 +95,21 @@ export default function Sidebar({ collapsed, setCollapsed }) {
 
   useEffect(() => {
     function handleClickOutside(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
+      // Check if click is outside both the trigger button and the portal menu
+      const isOutsideTrigger = menuRef.current && !menuRef.current.contains(event.target);
+      const isOutsidePortal = menuPortalRef.current && !menuPortalRef.current.contains(event.target);
+      if (isOutsideTrigger && isOutsidePortal) {
         setMenuOpen(false);
       }
     }
 
     if (menuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
+      // Use setTimeout to avoid catching the click that opened the menu
+      const timeoutId = setTimeout(() => {
+        document.addEventListener("mousedown", handleClickOutside);
+      }, 10);
       return () => {
+        clearTimeout(timeoutId);
         document.removeEventListener("mousedown", handleClickOutside);
       };
     }
@@ -112,19 +121,34 @@ export default function Sidebar({ collapsed, setCollapsed }) {
   };
 
   return (
-    <div className={`h-screen flex flex-col bg-white dark:bg-gray-900 text-blue-900 dark:text-gray-100 border-r border-blue-200 dark:border-gray-700 transition-all duration-300 overflow-x-hidden ${collapsed ? 'w-16' : 'w-64'}`} style={{minWidth: collapsed ? 64 : 256}}>
+    <div 
+      className={`h-screen flex flex-col transition-all duration-300 overflow-x-hidden backdrop-blur-xl ${collapsed ? 'w-16' : 'w-64'}`} 
+      style={{
+        minWidth: collapsed ? 64 : 256,
+        backgroundColor: dark 
+          ? 'rgba(26, 26, 58, 0.65)' 
+          : 'rgba(248, 250, 252, 0.65)',
+        color: currentTheme?.text || (dark ? '#e2e8f0' : '#1e293b'),
+        borderRight: `1px solid ${currentTheme?.border || (dark ? 'rgba(45, 45, 90, 0.5)' : 'rgba(226, 232, 240, 0.5)')}`
+      }}
+    >
       {/* TOGGLE BUTTON */}
       <button
-        className="h-14 flex items-center justify-between gap-2 px-3 border-b border-blue-200 dark:border-gray-700 focus:outline-none hover:bg-blue-50 dark:hover:bg-gray-800"
+        className="h-14 flex items-center justify-between gap-2 px-3 focus:outline-none transition-colors"
         onClick={() => setCollapsed(!collapsed)}
         aria-label={collapsed ? 'Open sidebar' : 'Close sidebar'}
-        style={{minHeight: 56}}
+        style={{
+          minHeight: 56,
+          borderBottom: `1px solid ${currentTheme?.border || (dark ? '#2d2d5a' : '#e2e8f0')}`
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = currentTheme?.surface || (dark ? '#12122a' : '#ffffff')}
+        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
       >
-        {!collapsed && <span className="text-xl font-bold text-blue-700 dark:text-blue-400">CRM</span>}
+        {!collapsed && <span className="text-xl font-bold" style={{ color: currentTheme?.primary }}>CRM</span>}
         {collapsed ? (
-          <PanelLeft className="w-5 h-5 text-blue-700 dark:text-blue-400 mx-auto" />
+          <PanelLeft className="w-5 h-5 mx-auto" style={{ color: currentTheme?.primary }} />
         ) : (
-          <PanelLeftClose className="w-5 h-5 text-blue-700 dark:text-blue-400" />
+          <PanelLeftClose className="w-5 h-5" style={{ color: currentTheme?.primary }} />
         )}
       </button>
 
@@ -246,8 +270,12 @@ export default function Sidebar({ collapsed, setCollapsed }) {
       {/* BOTTOM PROFILE MENU */}
       <div ref={menuRef} className={`relative border-t border-blue-200 dark:border-gray-700 ${collapsed ? 'px-1 py-2' : 'px-4 py-3'}`}>
         <button
-          onClick={() => setMenuOpen(!menuOpen)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen(true);
+          }}
           className={`w-full flex items-center ${collapsed ? 'justify-center' : 'justify-between'} px-2 sm:px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-800 rounded-lg transition-all`}
+          tabIndex={0}
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
@@ -266,82 +294,103 @@ export default function Sidebar({ collapsed, setCollapsed }) {
           </div>
         </button>
 
-        {menuOpen && (
-          <div className={`${collapsed ? 'fixed left-16 bottom-4' : 'absolute bottom-16 left-4'} w-56 bg-white dark:bg-gray-800 shadow-xl rounded-xl border border-blue-200 dark:border-gray-700 p-2 animate-fade-in z-50`}>
-            <Link
-              to="/settings"
-              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+        {menuOpen && createPortal(
+          <>
+            <div
+              ref={menuPortalRef}
+              className="fixed z-[100000] w-64 max-w-[90vw] bg-white dark:bg-gray-800 shadow-2xl rounded-xl border border-blue-200 dark:border-gray-700 p-2 animate-fade-in"
+              style={{
+                left: collapsed ? 72 : 80,
+                bottom: 24,
+                pointerEvents: 'auto',
+              }}
             >
-              <Settings className="w-5 h-5" />
-              <span>Settings</span>
-            </Link>
-            {/* ROOT-only link for System Configuration */}
-            {user?.role === "root" && (
               <Link
-                to="/system-config"
-                className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
+                to="/settings"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
-                <Shield className="w-5 h-5" />
-                <span>System Config</span>
+                <Settings className="w-5 h-5" />
+                <span>Settings</span>
               </Link>
-            )}
-            {/* ROOT-only link for API Configuration */}
-            {user?.role === "root" && (
-              <Link
-                to="/api-config"
-                className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
-              >
-                <Plug className="w-5 h-5" />
-                <span>API Configuration</span>
-              </Link>
-            )}
-            {/* ROOT and ADMIN link for Queue Management */}
-            {(user?.role === "root" || user?.role === "admin") && (
-              <Link
-                to="/queue"
-                className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
-              >
-                <ListOrdered className="w-5 h-5" />
-                <span>Queue Management</span>
-              </Link>
-            )}
-            {/* ROOT and ADMIN link for Backup Management */}
-            {(user?.role === "root" || user?.role === "admin") && (
-              <Link
-                to="/backup"
-                className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
-              >
-                <Database className="w-5 h-5" />
-                <span>Backup Management</span>
-              </Link>
-            )}
-            {/* Admin-only links for Roles and Users */}
-            {(user?.role === "admin" || user?.role === "root") && (
-              <>
+              {/* ROOT-only link for System Configuration */}
+              {user?.role === "root" && (
                 <Link
-                  to="/roles"
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  to="/system-config"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
                 >
-                  <Users className="w-5 h-5 text-blue-700 dark:text-blue-400" />
-                  <span>Manage Roles</span>
+                  <Shield className="w-5 h-5" />
+                  <span>System Config</span>
                 </Link>
+              )}
+              {/* ROOT-only link for API Configuration */}
+              {user?.role === "root" && (
                 <Link
-                  to="/users"
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  to="/api-config"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
                 >
-                  <Users className="w-5 h-5 text-green-700 dark:text-green-400" />
-                  <span>Manage Users</span>
+                  <Plug className="w-5 h-5" />
+                  <span>API Configuration</span>
                 </Link>
-              </>
-            )}
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-            >
-              <LogOut className="w-5 h-5" />
-              <span>Log out</span>
-            </button>
-          </div>
+              )}
+              {/* ROOT and ADMIN link for Queue Management */}
+              {(user?.role === "root" || user?.role === "admin") && (
+                <Link
+                  to="/queue"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
+                >
+                  <ListOrdered className="w-5 h-5" />
+                  <span>Queue Management</span>
+                </Link>
+              )}
+              {/* ROOT and ADMIN link for Backup Management */}
+              {(user?.role === "root" || user?.role === "admin") && (
+                <Link
+                  to="/backup"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400"
+                >
+                  <Database className="w-5 h-5" />
+                  <span>Backup Management</span>
+                </Link>
+              )}
+              {/* Admin-only links for Roles and Users */}
+              {(user?.role === "admin" || user?.role === "root") && (
+                <>
+                  <Link
+                    to="/roles"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <Users className="w-5 h-5 text-blue-700 dark:text-blue-400" />
+                    <span>Manage Roles</span>
+                  </Link>
+                  <Link
+                    to="/users"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <Users className="w-5 h-5 text-green-700 dark:text-green-400" />
+                    <span>Manage Users</span>
+                  </Link>
+                </>
+              )}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  setTimeout(() => handleLogout(), 0);
+                }}
+                className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+              >
+                <LogOut className="w-5 h-5" />
+                <span>Log out</span>
+              </button>
+            </div>
+          </>,
+          document.body
         )}
       </div>
     </div>

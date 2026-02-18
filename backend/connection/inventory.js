@@ -7,6 +7,33 @@ function getActiveTallyUrl() {
   return getTallyUrl() || process.env.TALLY_URL || 'http://localhost:9000';
 }
 
+// Stock Items with Balance XML - This is the only XML we need for accurate closing quantities
+const STOCK_ITEMS_XML = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>StockItemsWithBalance</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="StockItemsWithBalance" ISMODIFY="No">
+            <TYPE>StockItem</TYPE>
+            <FETCH>NAME,PARENT,BASEUNITS,CLOSINGBALANCE,CLOSINGVALUE,CLOSINGRATE,OPENINGBALANCE,OPENINGVALUE,OPENINGRATE</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>
+`;
+
 const INVENTORY_XML = `
 <ENVELOPE>
     <HEADER>
@@ -48,279 +75,364 @@ const INVENTORY_XML = `
 `;
 
 function cleanTallyXml(xml) {
+  // Remove control characters that can break parsing
   return xml.replace(/&#(?:[0-9]|[1-2][0-9]|3[0-1]);/g, '');
 }
 
-async function fetchInventoryXML() {
-  const TALLY_URL = getActiveTallyUrl();
-  const { data } = await axios.post(TALLY_URL, INVENTORY_XML, {
-    headers: { "Content-Type": "text/xml" },
-    timeout: 15000,
-  });
-
-  return cleanTallyXml(data);
-}
-
-// Helper function to parse date strings from Tally (YYYYMMDD format)
-function parseTallyDate(dateStr) {
-  if (!dateStr || dateStr.length !== 8) return null;
-  const year = dateStr.substring(0, 4);
-  const month = dateStr.substring(4, 6);
-  const day = dateStr.substring(6, 8);
-  return new Date(`${year}-${month}-${day}`);
-}
-
-// Helper function to get the most recent/applicable entry from dated lists
-function getMostRecentEntry(list, fieldName) {
-  if (!list) return null;
-  
-  const entries = Array.isArray(list) ? list : [list];
-  
-  // Sort by APPLICABLEFROM date (most recent first)
-  const sorted = entries
-    .filter(entry => entry[fieldName])
-    .sort((a, b) => {
-      const dateA = parseTallyDate(a.APPLICABLEFROM);
-      const dateB = parseTallyDate(b.APPLICABLEFROM);
-      if (!dateA && !dateB) return 0;
-      if (!dateA) return 1;
-      if (!dateB) return -1;
-      return dateB - dateA; // Most recent first
-    });
-  
-  return sorted.length > 0 ? sorted[0][fieldName] : null;
-}
-
-async function parseInventoryXml(xml) {
-  const parsed = await xml2js.parseStringPromise(xml, {
-    explicitArray: false,
-    mergeAttrs: true,
-    preserveChildrenOrder: true
-  });
-
-  const inventory = [];
-  const stockItems = [];
-
-  // UNIVERSAL STOCKITEM FINDER
-  function scan(node) {
-    if (!node || typeof node !== "object") return;
-
-    // If STOCKITEM exists here
-    if (node.STOCKITEM) {
-      const list = Array.isArray(node.STOCKITEM)
-        ? node.STOCKITEM
-        : [node.STOCKITEM];
-      stockItems.push(...list);
-    }
-
-    for (const key of Object.keys(node)) {
-      scan(node[key]);
-    }
+// Extract text value from xml2js parsed element
+// Handles: string, object with _ (text content), or object with #text
+function getTextValue(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    // xml2js puts text content in _ when there are attributes
+    if (val._ !== undefined) return String(val._);
+    if (val['#text'] !== undefined) return String(val['#text']);
+    // Sometimes the value is nested
+    if (val.TYPE !== undefined && Object.keys(val).length === 1) return '';
   }
+  return '';
+}
 
-  scan(parsed);
+// Parse quantity string like " 110 pcs" to number
+function parseQty(val) {
+  const text = getTextValue(val);
+  if (!text) return 0;
+  const match = text.trim().match(/(-?[\d.]+)/);
+  return match ? parseFloat(match[1]) : 0;
+}
 
-  // PROCESS ALL STOCK ITEMS
-  for (const item of stockItems) {
+// Parse rate string like "6500.00/pcs" to number
+function parseRate(val) {
+  const text = getTextValue(val);
+  if (!text) return 0;
+  const match = text.trim().match(/(-?[\d.]+)/);
+  return match ? parseFloat(match[1]) : 0;
+}
 
-    // 1. NAME + ALIAS
-    let primary_name = "";
-    let alias_name = "N/A";
+// Parse amount string like "-654594.83" to positive number
+function parseAmount(val) {
+  const text = getTextValue(val);
+  if (!text) return 0;
+  const match = text.trim().match(/(-?[\d.]+)/);
+  return match ? Math.abs(parseFloat(match[1])) : 0;
+}
 
-    const lang = item["LANGUAGENAME.LIST"]?.["NAME.LIST"];
-    if (lang?.NAME) {
-      const names = Array.isArray(lang.NAME) ? lang.NAME : [lang.NAME];
-      primary_name = names[0] || "";
-      alias_name = names[1] || "N/A";
-    } else {
-      primary_name = item.NAME || "";
-    }
-
-    if (!primary_name) continue;
-
-    // 2. GROUP
-    let group_name = item.PARENT || "Primary";
-
-    // 3. CATEGORY
-    let category = item.CATEGORY || "N/A";
-    if (category === "&#4; Not Applicable" || category.trim() === "") {
-      category = "N/A";
-    }
-
-    // 4. UNIT - Handle compound units better
-    let unit = item.BASEUNITS || "Nos";
-    
-    // Extract additional unit info if compound unit
-    let unit_conversion = 1;
-    if (item.CONVERSION && parseFloat(item.CONVERSION) > 0) {
-      unit_conversion = parseFloat(item.CONVERSION);
-    }
-
-    // 5. HSN - Get most recent HSN entry
-    let hsn = "N/A";
-    const hsnCode = getMostRecentEntry(item["HSNDETAILS.LIST"], "HSNCODE");
-    if (hsnCode) {
-      hsn = hsnCode;
-    }
-
-    // 6. GST RATE
-    let gst_rate = "0";
-    const rateBlock =
-      item["GSTDETAILS.LIST"]?.["STATEWISEDETAILS.LIST"]?.["RATEDETAILS.LIST"];
-
-    if (rateBlock) {
-      const arr = Array.isArray(rateBlock) ? rateBlock : [rateBlock];
-      for (const r of arr) {
-        if (r.GSTRATEDUTYHEAD === "IGST" && r.GSTRATE) {
-          gst_rate = r.GSTRATE;
-        }
-      }
-    }
-
-    // 7. MRP/RATE - Robust extraction with fallbacks and numeric cleaning
-    function extractNumeric(val) {
-      if (typeof val === 'number') return val;
-      if (typeof val === 'string') {
-        const match = val.match(/([\d.]+)/);
-        return match ? Number(match[1]) : 0;
-      }
-      return 0;
-    }
-
-    let rate = 0;
-    // Try FULLMRP.LIST.RATE
-    if (item["FULLMRP.LIST"]?.RATE) {
-      rate = extractNumeric(item["FULLMRP.LIST"].RATE);
-    }
-    // Try MRPDETAILS.LIST.MRPRATEDETAILS.LIST.MRPRATE
-    if ((!rate || rate === 0) && item["MRPDETAILS.LIST"]) {
-      const mrpDetail = Array.isArray(item["MRPDETAILS.LIST"]) 
-        ? item["MRPDETAILS.LIST"][0] 
-        : item["MRPDETAILS.LIST"];
-      if (mrpDetail?.["MRPRATEDETAILS.LIST"]?.MRPRATE) {
-        rate = extractNumeric(mrpDetail["MRPRATEDETAILS.LIST"].MRPRATE);
-      }
-    }
-    // Try batch OPENINGRATE if still empty
-    if ((!rate || rate === 0) && item["BATCHALLOCATIONS.LIST"]) {
-      const batches = Array.isArray(item["BATCHALLOCATIONS.LIST"]) ? item["BATCHALLOCATIONS.LIST"] : [item["BATCHALLOCATIONS.LIST"]];
-      for (const b of batches) {
-        if (b.OPENINGRATE) {
-          const batchRate = extractNumeric(b.OPENINGRATE);
-          if (batchRate > 0) {
-            rate = batchRate;
-            break;
-          }
-        }
-      }
-    }
-    // Fallback to STANDARDSELLINGPRICE, STANDARDPRICE
-    if ((!rate || rate === 0) && item.STANDARDSELLINGPRICE) {
-      rate = extractNumeric(item.STANDARDSELLINGPRICE);
-    }
-    if ((!rate || rate === 0) && item.STANDARDPRICE) {
-      rate = extractNumeric(item.STANDARDPRICE);
-    }
-    // Fallback to OPENINGRATE (top-level)
-    if ((!rate || rate === 0) && item.OPENINGRATE) {
-      rate = extractNumeric(item.OPENINGRATE);
-    }
-    // Fallback to CLOSINGRATE (top-level)
-    if ((!rate || rate === 0) && item.CLOSINGRATE) {
-      rate = extractNumeric(item.CLOSINGRATE);
-    }
-    // Fallback to OPENINGVALUE/OPENINGBALANCE ratio
-    if ((!rate || rate === 0) && extractNumeric(item.OPENINGBALANCE) > 0 && extractNumeric(item.OPENINGVALUE) > 0) {
-      rate = extractNumeric(item.OPENINGVALUE) / extractNumeric(item.OPENINGBALANCE);
-    }
-    // Fallback to CLOSINGVALUE/CLOSINGBALANCE ratio
-    if ((!rate || rate === 0) && extractNumeric(item.CLOSINGBALANCE) > 0 && extractNumeric(item.CLOSINGVALUE) > 0) {
-      rate = extractNumeric(item.CLOSINGVALUE) / extractNumeric(item.CLOSINGBALANCE);
-    }
-    // 8. STOCK VALUES (ensure numbers, with batch and opening/closing fallback)
-    function extractQty(val) {
-      if (typeof val === 'number') return val;
-      if (typeof val === 'string') {
-        // Remove units if present (e.g., '10 Nos')
-        const match = val.match(/([\d.]+)/);
-        return match ? Number(match[1]) : 0;
-      }
-      return 0;
-    }
-
-    // Try closing balance, else batch closing, else opening, else 0
-    let closing_balance = extractQty(item.CLOSINGBALANCE);
-    if ((!closing_balance || closing_balance === 0) && item["BATCHALLOCATIONS.LIST"]) {
-      const batches = Array.isArray(item["BATCHALLOCATIONS.LIST"]) ? item["BATCHALLOCATIONS.LIST"] : [item["BATCHALLOCATIONS.LIST"]];
-      for (const b of batches) {
-        if (b.CLOSINGBALANCE) {
-          const batchQty = extractQty(b.CLOSINGBALANCE);
-          if (batchQty > 0) {
-            closing_balance = batchQty;
-            break;
-          }
-        }
-      }
-    }
-    if ((!closing_balance || closing_balance === 0) && item.OPENINGBALANCE) {
-      closing_balance = extractQty(item.OPENINGBALANCE);
-    }
-
-    const closing_value = extractNumeric(item.CLOSINGVALUE);
-    const opening_balance = extractQty(item.OPENINGBALANCE);
-    const opening_value = extractNumeric(item.OPENINGVALUE);
-    const purchase_rate = extractNumeric(item.STANDARDPRICE);
-    const selling_rate = extractNumeric(item.STANDARDSELLINGPRICE);
-    // 9. BATCH DETAILS (if available, with numeric extraction)
-    let batch_info = [];
-    if (item["BATCHALLOCATIONS.LIST"]) {
-      const batches = Array.isArray(item["BATCHALLOCATIONS.LIST"])
-        ? item["BATCHALLOCATIONS.LIST"]
-        : [item["BATCHALLOCATIONS.LIST"]];
-      batch_info = batches.map(b => ({
-        godown: b.GODOWNNAME || "Main Location",
-        batch: b.BATCHNAME || "Primary Batch",
-        balance: extractQty(b.OPENINGBALANCE),
-        value: extractNumeric(b.OPENINGVALUE),
-        rate: extractNumeric(b.OPENINGRATE),
-        mfg_date: b.MFDON || null
-      }));
-    }
-    // Stock status
-    const stock_status = closing_balance > 0 ? "In Stock" : "Out of Stock";
-    inventory.push({
-      name: primary_name,
-      alias: alias_name,
-      group: group_name,
-      category,
-      hsn,
-      gst: gst_rate,
-      rate,
-      unit,
-      unit_conversion,
-      quantity: closing_balance,
-      stock: stock_status,
-      closing_value,
-      opening_balance,
-      opening_value,
-      purchase_rate,
-      selling_rate,
-      batch_info: batch_info.length > 0 ? batch_info : null,
-      guid: item.GUID || null,
+/**
+ * Parse the STOCKITEM response from Tally TDL Collection
+ * Handles format: <STOCKITEM NAME="Chra"> with child elements
+ */
+async function parseStockItemsXml(xml) {
+  const inventory = [];
+  
+  try {
+    const parsed = await xml2js.parseStringPromise(xml, {
+      explicitArray: false,
+      mergeAttrs: true,
+      preserveChildrenOrder: true
     });
+
+    // Find all STOCKITEM elements recursively
+    function findStockItems(node, items = []) {
+      if (!node || typeof node !== 'object') return items;
+      
+      if (node.STOCKITEM) {
+        const stockItems = Array.isArray(node.STOCKITEM) ? node.STOCKITEM : [node.STOCKITEM];
+        items.push(...stockItems);
+      }
+      
+      for (const key of Object.keys(node)) {
+        if (typeof node[key] === 'object') {
+          findStockItems(node[key], items);
+        }
+      }
+      
+      return items;
+    }
+
+    const stockItems = findStockItems(parsed);
+    console.log(`[Inventory] Found ${stockItems.length} stock items in Tally response`);
+
+    for (const item of stockItems) {
+      // Get name - can be from NAME attribute or child element
+      let name = item.NAME || '';
+      if (!name && item['LANGUAGENAME.LIST']?.['NAME.LIST']?.NAME) {
+        const names = item['LANGUAGENAME.LIST']['NAME.LIST'].NAME;
+        name = Array.isArray(names) ? names[0] : names;
+      }
+      if (!name || name.trim() === '') continue;
+
+      // Get alias from LANGUAGENAME.LIST if available
+      let alias = 'N/A';
+      if (item['LANGUAGENAME.LIST']?.['NAME.LIST']?.NAME) {
+        const names = item['LANGUAGENAME.LIST']['NAME.LIST'].NAME;
+        if (Array.isArray(names) && names.length > 1) {
+          alias = names[1] || 'N/A';
+        }
+      }
+
+      // Get parent/group - use getTextValue helper
+      let group = getTextValue(item.PARENT) || 'Primary';
+
+      // Get unit - use getTextValue helper
+      let unit = getTextValue(item.BASEUNITS) || 'Nos';
+      // Handle "&#4; Not Applicable" case
+      if (unit.includes('Not Applicable') || unit.includes('&#4;')) {
+        unit = 'N/A';
+      }
+
+      // --- Extract category, HSN, GST details ---
+      // Category: try to get from CATEGORY or GROUP or PARENT
+      let category = getTextValue(item.CATEGORY) || group || 'N/A';
+
+      // HSN: try to get from HSNDETAILS.LIST.HSNCODE or HSNDETAILS.LIST[0].HSNCODE
+      let hsn = 'N/A';
+      if (item['HSNDETAILS.LIST']) {
+        const hsnDetails = item['HSNDETAILS.LIST'];
+        if (Array.isArray(hsnDetails)) {
+          hsn = getTextValue(hsnDetails[0]?.HSNCODE) || 'N/A';
+        } else if (typeof hsnDetails === 'object') {
+          hsn = getTextValue(hsnDetails.HSNCODE) || 'N/A';
+        }
+      }
+
+      // GST: try to get from GSTDETAILS.LIST.GSTRATE or GSTDETAILS.LIST[0].GSTRATE
+      let gst = 0;
+      if (item['GSTDETAILS.LIST']) {
+        const gstDetails = item['GSTDETAILS.LIST'];
+        let gstRate = null;
+        if (Array.isArray(gstDetails)) {
+          gstRate = gstDetails[0]?.GSTRATE;
+        } else if (typeof gstDetails === 'object') {
+          gstRate = gstDetails.GSTRATE;
+        }
+        if (gstRate) {
+          // GSTRATE can be a string like "18%" or "18"
+          const gstText = getTextValue(gstRate);
+          const match = gstText.match(/([\d.]+)/);
+          if (match) gst = parseFloat(match[1]);
+        }
+      }
+
+      // Parse all numeric values
+      const closingQty = parseQty(item.CLOSINGBALANCE);
+      const closingValue = parseAmount(item.CLOSINGVALUE);
+      const closingRate = parseRate(item.CLOSINGRATE);
+      const openingQty = parseQty(item.OPENINGBALANCE);
+      const openingValue = parseAmount(item.OPENINGVALUE);
+      const openingRate = parseRate(item.OPENINGRATE);
+
+      // Use closing rate as primary rate, fallback to opening rate
+      const rate = closingRate > 0 ? closingRate : openingRate;
+
+      inventory.push({
+        name: name.trim(),
+        alias,
+        group,
+        category,
+        hsn,
+        gst,
+        rate,
+        unit,
+        quantity: closingQty,
+        stock: closingQty > 0 ? 'In Stock' : 'Out of Stock',
+        closing_value: closingValue,
+        opening_balance: openingQty,
+        opening_value: openingValue,
+        purchase_rate: openingRate,
+        selling_rate: closingRate,
+      });
+    }
+  } catch (err) {
+    console.error('[Inventory] Error parsing stock items XML:', err.message);
   }
 
   return inventory;
 }
 
-async function fetchInventory() {
+/**
+ * Parse the INVENTORY_XML response to extract HSN, GST, Category details
+ */
+async function parseInventoryDetailsXml(xml) {
+  const detailsMap = new Map();
+  
   try {
-    const xml = await fetchInventoryXML();
-    return await parseInventoryXml(xml);
+    const parsed = await xml2js.parseStringPromise(xml, {
+      explicitArray: false,
+      mergeAttrs: true,
+      preserveChildrenOrder: true
+    });
+
+    // Find all STOCKITEM elements recursively
+    function findStockItems(node, items = []) {
+      if (!node || typeof node !== 'object') return items;
+      
+      if (node.STOCKITEM) {
+        const stockItems = Array.isArray(node.STOCKITEM) ? node.STOCKITEM : [node.STOCKITEM];
+        items.push(...stockItems);
+      }
+      
+      for (const key of Object.keys(node)) {
+        if (typeof node[key] === 'object') {
+          findStockItems(node[key], items);
+        }
+      }
+      
+      return items;
+    }
+
+    const stockItems = findStockItems(parsed);
+    console.log(`[Inventory] Found ${stockItems.length} items in details XML`);
+
+    for (const item of stockItems) {
+      let name = item.NAME || '';
+      if (!name && item['LANGUAGENAME.LIST']?.['NAME.LIST']?.NAME) {
+        const names = item['LANGUAGENAME.LIST']['NAME.LIST'].NAME;
+        name = Array.isArray(names) ? names[0] : names;
+      }
+      if (!name || name.trim() === '') continue;
+
+      // --- CATEGORY ---
+      // In daybook.xml: <CATEGORY>Chra</CATEGORY> is direct child of STOCKITEM
+      let category = getTextValue(item.CATEGORY) || getTextValue(item.STOCKCATEGORY) || getTextValue(item.PARENT) || 'N/A';
+
+      // --- HSN ---
+      // In daybook.xml: HSNDETAILS.LIST > HSNCODE: "6352"
+      // Also available in GSTDETAILS.LIST > HSNCODE as backup
+      let hsn = 'N/A';
+      
+      // Try HSNDETAILS.LIST first
+      if (item['HSNDETAILS.LIST']) {
+        const hsnDetails = item['HSNDETAILS.LIST'];
+        if (Array.isArray(hsnDetails)) {
+          hsn = getTextValue(hsnDetails[0]?.HSNCODE) || 'N/A';
+        } else if (typeof hsnDetails === 'object') {
+          hsn = getTextValue(hsnDetails.HSNCODE) || 'N/A';
+        }
+      }
+      
+      // Fallback to GSTDETAILS.LIST > HSNCODE
+      if (hsn === 'N/A' && item['GSTDETAILS.LIST']) {
+        const gstDetails = item['GSTDETAILS.LIST'];
+        const gstObj = Array.isArray(gstDetails) ? gstDetails[0] : gstDetails;
+        if (gstObj && gstObj.HSNCODE) {
+          hsn = getTextValue(gstObj.HSNCODE) || 'N/A';
+        }
+      }
+
+      // --- GST ---
+      // In daybook.xml structure:
+      // GSTDETAILS.LIST > STATEWISEDETAILS.LIST > RATEDETAILS.LIST (array)
+      // Each RATEDETAILS.LIST has: GSTRATEDUTYHEAD (CGST/SGST/IGST) and GSTRATE
+      let gst = 0;
+      if (item['GSTDETAILS.LIST']) {
+        const gstDetails = item['GSTDETAILS.LIST'];
+        const gstObj = Array.isArray(gstDetails) ? gstDetails[0] : gstDetails;
+        
+        // Navigate to STATEWISEDETAILS.LIST
+        let statewiseDetails = gstObj?.['STATEWISEDETAILS.LIST'];
+        if (!statewiseDetails) statewiseDetails = gstObj?.STATEWISEDETAILS;
+        
+        if (statewiseDetails) {
+          const stateObj = Array.isArray(statewiseDetails) ? statewiseDetails[0] : statewiseDetails;
+          
+          // Get RATEDETAILS.LIST - this is an array of rate entries
+          let rateDetailsList = stateObj?.['RATEDETAILS.LIST'];
+          if (!rateDetailsList) rateDetailsList = stateObj?.RATEDETAILS;
+          
+          let igst = 0, cgst = 0, sgst = 0;
+          if (rateDetailsList) {
+            const rates = Array.isArray(rateDetailsList) ? rateDetailsList : [rateDetailsList];
+            for (const rate of rates) {
+              const duty = getTextValue(rate.GSTRATEDUTYHEAD).toUpperCase();
+              const rateVal = parseFloat(getTextValue(rate.GSTRATE)) || 0;
+              
+              if (duty.includes('IGST')) igst = rateVal;
+              else if (duty.includes('CGST')) cgst = rateVal;
+              else if (duty.includes('SGST') || duty.includes('UTGST')) sgst = rateVal;
+            }
+          }
+          // Use IGST if available, otherwise sum CGST + SGST
+          gst = igst > 0 ? igst : (cgst + sgst);
+        }
+      }
+
+      // Extract MRP from FULLMRP.LIST
+      let mrp = 0;
+      if (item['FULLMRP.LIST']) {
+        const mrpDetails = item['FULLMRP.LIST'];
+        if (Array.isArray(mrpDetails)) {
+          mrp = parseAmount(mrpDetails[0]?.RATE);
+        } else if (typeof mrpDetails === 'object') {
+          mrp = parseAmount(mrpDetails.RATE);
+        }
+      }
+
+      console.log(`[Inventory] Parsed details for ${name}: HSN=${hsn}, GST=${gst}%, Category=${category}`);
+      detailsMap.set(name.trim(), { hsn, gst, category, mrp });
+    }
   } catch (err) {
-    console.error("Tally Inventory Fetch Error:", err);
+    console.error('[Inventory] Error parsing details XML:', err.message);
+  }
+
+  return detailsMap;
+}
+
+/**
+ * Fetch inventory from Tally using both XMLs:
+ * - STOCK_ITEMS_XML for accurate closing quantities
+ * - INVENTORY_XML for HSN, GST, Category details
+ */
+async function fetchInventory() {
+  const TALLY_URL = getActiveTallyUrl();
+  
+  try {
+    console.log('[Inventory] Fetching stock items from Tally:', TALLY_URL);
+    
+    // Fetch quantities from TDL Collection
+    const { data: stockData } = await axios.post(TALLY_URL, STOCK_ITEMS_XML, {
+      headers: { 'Content-Type': 'text/xml' },
+      timeout: 15000,
+    });
+
+    const cleanedStockXml = cleanTallyXml(stockData);
+    const inventory = await parseStockItemsXml(cleanedStockXml);
+    
+    console.log(`[Inventory] Successfully parsed ${inventory.length} items with quantities`);
+
+    // Fetch HSN, GST, Category details from INVENTORY_XML
+    try {
+      const { data: detailsData } = await axios.post(TALLY_URL, INVENTORY_XML, {
+        headers: { 'Content-Type': 'text/xml' },
+        timeout: 15000,
+      });
+
+      const cleanedDetailsXml = cleanTallyXml(detailsData);
+      const detailsMap = await parseInventoryDetailsXml(cleanedDetailsXml);
+
+      // Merge details into inventory
+      for (const item of inventory) {
+        const details = detailsMap.get(item.name);
+        if (details) {
+          item.hsn = details.hsn !== 'N/A' ? details.hsn : item.hsn;
+          item.gst = details.gst > 0 ? details.gst : item.gst;
+          item.category = details.category !== 'N/A' ? details.category : item.category;
+          if (details.mrp > 0) item.mrp = details.mrp;
+        }
+      }
+      console.log(`[Inventory] Merged HSN/GST/Category details for ${detailsMap.size} items`);
+    } catch (detailsErr) {
+      console.warn('[Inventory] Could not fetch HSN/GST details:', detailsErr.message);
+      // Continue with basic inventory data
+    }
+
+    return inventory;
+    
+  } catch (err) {
+    console.error('[Inventory] Tally Fetch Error:', err.message);
     throw err;
   }
 }
 
-module.exports = { fetchInventory, parseInventoryXml };
+module.exports = { fetchInventory, parseStockItemsXml };

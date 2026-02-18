@@ -271,6 +271,216 @@ function clearFailedAttempts(identifier) {
   loginAttempts.delete(identifier);
 }
 
+// ===========================================
+// RBAC PERMISSION SYSTEM
+// ===========================================
+
+// All available permissions in the system
+const ALL_PERMISSIONS = {
+  // Inventory permissions
+  'view_inventory': { category: 'Inventory', description: 'View inventory items' },
+  'create_inventory': { category: 'Inventory', description: 'Add new inventory items' },
+  'edit_inventory': { category: 'Inventory', description: 'Edit inventory items' },
+  'delete_inventory': { category: 'Inventory', description: 'Delete inventory items' },
+  'view_rates': { category: 'Inventory', description: 'View item rates/prices' },
+  
+  // Orders permissions
+  'view_orders': { category: 'Orders', description: 'View orders' },
+  'create_orders': { category: 'Orders', description: 'Create new orders' },
+  'edit_orders': { category: 'Orders', description: 'Edit orders' },
+  'delete_orders': { category: 'Orders', description: 'Delete orders' },
+  'convert_orders': { category: 'Orders', description: 'Convert orders to sales' },
+  
+  // Vouchers permissions
+  'view_vouchers': { category: 'Vouchers', description: 'View vouchers' },
+  'create_vouchers': { category: 'Vouchers', description: 'Create new vouchers' },
+  'edit_vouchers': { category: 'Vouchers', description: 'Edit vouchers' },
+  'delete_vouchers': { category: 'Vouchers', description: 'Delete vouchers' },
+  
+  // Ledgers permissions
+  'view_ledgers': { category: 'Ledgers', description: 'View ledgers' },
+  'create_ledgers': { category: 'Ledgers', description: 'Create new ledgers' },
+  'edit_ledgers': { category: 'Ledgers', description: 'Edit ledgers' },
+  'delete_ledgers': { category: 'Ledgers', description: 'Delete ledgers' },
+  'view_blacklisted_ledgers': { category: 'Ledgers', description: 'View blacklisted ledgers' },
+  'manage_blacklist': { category: 'Ledgers', description: 'Add/remove ledgers from blacklist' },
+  
+  // Users & Employees permissions
+  'view_users': { category: 'Users', description: 'View user accounts' },
+  'create_users': { category: 'Users', description: 'Create new users' },
+  'edit_users': { category: 'Users', description: 'Edit user accounts' },
+  'delete_users': { category: 'Users', description: 'Delete user accounts' },
+  'view_employees': { category: 'Employees', description: 'View employees' },
+  'manage_employees': { category: 'Employees', description: 'Manage employees' },
+  
+  // Reports & Logs permissions
+  'view_reports': { category: 'Reports', description: 'View reports' },
+  'export_reports': { category: 'Reports', description: 'Export reports' },
+  'view_logs': { category: 'Logs', description: 'View system logs' },
+  'clear_logs': { category: 'Logs', description: 'Clear system logs' },
+  
+  // System permissions
+  'manage_settings': { category: 'System', description: 'Manage system settings' },
+  'manage_roles': { category: 'System', description: 'Manage roles and permissions' },
+  'sync_tally': { category: 'System', description: 'Sync with Tally' },
+  'manage_backups': { category: 'System', description: 'Manage database backups' }
+};
+
+// Default permissions by role
+const DEFAULT_ROLE_PERMISSIONS = {
+  root: Object.keys(ALL_PERMISSIONS), // Root has all permissions
+  admin: [
+    'view_inventory', 'create_inventory', 'edit_inventory', 'delete_inventory', 'view_rates',
+    'view_orders', 'create_orders', 'edit_orders', 'delete_orders', 'convert_orders',
+    'view_vouchers', 'create_vouchers', 'edit_vouchers', 'delete_vouchers',
+    'view_ledgers', 'create_ledgers', 'edit_ledgers', 'delete_ledgers', 'view_blacklisted_ledgers', 'manage_blacklist',
+    'view_users', 'create_users', 'edit_users', 'delete_users',
+    'view_employees', 'manage_employees',
+    'view_reports', 'export_reports', 'view_logs',
+    'manage_settings', 'manage_roles', 'sync_tally', 'manage_backups'
+  ],
+  manager: [
+    'view_inventory', 'create_inventory', 'edit_inventory', 'view_rates',
+    'view_orders', 'create_orders', 'edit_orders', 'convert_orders',
+    'view_vouchers', 'create_vouchers',
+    'view_ledgers', 'create_ledgers',
+    'view_employees', 'manage_employees',
+    'view_reports', 'export_reports'
+  ],
+  staff: [
+    'view_inventory',
+    'view_orders', 'create_orders', 'edit_orders',
+    'view_vouchers',
+    'view_ledgers',
+    'view_employees',
+    'view_reports'
+  ],
+  user: [
+    'view_inventory',
+    'view_orders',
+    'view_vouchers',
+    'view_ledgers'
+  ]
+};
+
+// User custom permissions storage (in-memory, load from file in production)
+const fs = require('fs');
+const path = require('path');
+const PERMISSIONS_FILE = path.join(__dirname, '../data/user_permissions.json');
+
+let userCustomPermissions = {};
+
+// Load user permissions from file
+function loadUserPermissions() {
+  try {
+    const dataDir = path.join(__dirname, '../data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    if (fs.existsSync(PERMISSIONS_FILE)) {
+      userCustomPermissions = JSON.parse(fs.readFileSync(PERMISSIONS_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('Failed to load user permissions:', err);
+  }
+}
+
+// Save user permissions to file
+function saveUserPermissions() {
+  try {
+    fs.writeFileSync(PERMISSIONS_FILE, JSON.stringify(userCustomPermissions, null, 2));
+  } catch (err) {
+    console.error('Failed to save user permissions:', err);
+  }
+}
+
+// Load on startup
+loadUserPermissions();
+
+/**
+ * Get user's effective permissions
+ * Combines role-based defaults with custom user permissions
+ */
+function getUserPermissions(user) {
+  if (!user) return [];
+  
+  const role = user.role?.toLowerCase() || 'user';
+  const defaultPerms = DEFAULT_ROLE_PERMISSIONS[role] || DEFAULT_ROLE_PERMISSIONS.user;
+  const customPerms = userCustomPermissions[user.id] || [];
+  
+  // Merge default and custom permissions (union)
+  return [...new Set([...defaultPerms, ...customPerms])];
+}
+
+/**
+ * Check if user has a specific permission
+ */
+function hasPermission(user, permission) {
+  if (!user || !permission) return false;
+  
+  // Root always has all permissions
+  if (user.role?.toLowerCase() === ROLES.ROOT) return true;
+  
+  const permissions = getUserPermissions(user);
+  return permissions.includes(permission);
+}
+
+/**
+ * Set custom permissions for a user
+ */
+function setUserPermissions(userId, permissions) {
+  userCustomPermissions[userId] = permissions;
+  saveUserPermissions();
+}
+
+/**
+ * Middleware: Require specific permission
+ */
+function requirePermission(permission) {
+  return (req, res, next) => {
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    if (!hasPermission(user, permission)) {
+      return res.status(403).json({ 
+        error: 'Permission denied',
+        required: permission,
+        message: `You don't have the '${permission}' permission to perform this action.`
+      });
+    }
+    
+    next();
+  };
+}
+
+/**
+ * Middleware: Require any of the specified permissions
+ */
+function requireAnyPermission(permissions) {
+  return (req, res, next) => {
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    const hasAny = permissions.some(p => hasPermission(user, p));
+    
+    if (!hasAny) {
+      return res.status(403).json({ 
+        error: 'Permission denied',
+        required: permissions,
+        message: `You need one of these permissions: ${permissions.join(', ')}`
+      });
+    }
+    
+    next();
+  };
+}
+
 module.exports = {
   ROLES,
   ROLE_HIERARCHY,
@@ -286,5 +496,15 @@ module.exports = {
   sanitizeConfigForRole,
   checkBruteForce,
   recordFailedAttempt,
-  clearFailedAttempts
+  clearFailedAttempts,
+  // RBAC exports
+  ALL_PERMISSIONS,
+  DEFAULT_ROLE_PERMISSIONS,
+  getUserPermissions,
+  hasPermission,
+  setUserPermissions,
+  requirePermission,
+  requireAnyPermission,
+  loadUserPermissions,
+  saveUserPermissions
 };

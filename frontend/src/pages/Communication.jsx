@@ -407,7 +407,7 @@ export default function Communication() {
   const currentTab = TABS.find(t => t.key === activeTab);
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="p-6 min-h-screen">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

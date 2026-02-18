@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../auth";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, UserPlus, Trash2, Edit2, Save, X, Phone, Mail,
-  Building, Briefcase, IndianRupee, User, Search, Filter
+  Building, Briefcase, IndianRupee, User, Search, Filter, Target
 } from "lucide-react";
 
 // Get employees from localStorage
@@ -37,7 +37,9 @@ export default function EmployeeManagement() {
   const [employees, setEmployees] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showTargetModal, setShowTargetModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [targetData, setTargetData] = useState({ monthlyTarget: "", incentiveRate: "" });
   const [message, setMessage] = useState(null);
   const [search, setSearch] = useState("");
   const [filterDept, setFilterDept] = useState("");
@@ -53,8 +55,6 @@ export default function EmployeeManagement() {
     address: "",
     emergencyContact: "",
     notes: "",
-    monthlyTarget: "",
-    incentiveRate: "",
     isUser: false,
     userId: null,
     createUserAccount: false,
@@ -79,8 +79,6 @@ export default function EmployeeManagement() {
       address: "",
       emergencyContact: "",
       notes: "",
-      monthlyTarget: "",
-      incentiveRate: "",
       isUser: false,
       userId: null,
       createUserAccount: false,
@@ -138,8 +136,8 @@ export default function EmployeeManagement() {
       id: Date.now().toString(),
       ...formData,
       salary: parseFloat(formData.salary) || 0,
-      monthlyTarget: parseFloat(formData.monthlyTarget) || 0,
-      incentiveRate: parseFloat(formData.incentiveRate) || 0,
+      monthlyTarget: 0,
+      incentiveRate: 0,
       isUser: !!userId,
       userId: userId,
       createdAt: new Date().toISOString(),
@@ -167,8 +165,9 @@ export default function EmployeeManagement() {
             ...emp,
             ...formData,
             salary: parseFloat(formData.salary) || 0,
-            monthlyTarget: parseFloat(formData.monthlyTarget) || 0,
-            incentiveRate: parseFloat(formData.incentiveRate) || 0,
+            // Keep existing target/incentive values
+            monthlyTarget: emp.monthlyTarget || 0,
+            incentiveRate: emp.incentiveRate || 0,
             updatedAt: new Date().toISOString()
           }
         : emp
@@ -211,13 +210,67 @@ export default function EmployeeManagement() {
       address: emp.address || "",
       emergencyContact: emp.emergencyContact || "",
       notes: emp.notes || "",
-      monthlyTarget: emp.monthlyTarget?.toString() || "",
-      incentiveRate: emp.incentiveRate?.toString() || "",
       isUser: emp.isUser || false,
       userId: emp.userId || null
     });
     setShowEditModal(true);
   };
+
+  // Open target/incentive modal for an employee
+  const openTargetModal = (emp) => {
+    setSelectedEmployee(emp);
+    setTargetData({
+      monthlyTarget: emp.monthlyTarget?.toString() || "",
+      incentiveRate: emp.incentiveRate?.toString() || ""
+    });
+    setShowTargetModal(true);
+  };
+
+  // Save target and incentive
+  const handleSaveTarget = () => {
+    if (!selectedEmployee) return;
+
+    const updatedEmployees = employees.map(emp =>
+      emp.id === selectedEmployee.id
+        ? {
+            ...emp,
+            monthlyTarget: parseFloat(targetData.monthlyTarget) || 0,
+            incentiveRate: parseFloat(targetData.incentiveRate) || 0,
+            updatedAt: new Date().toISOString()
+          }
+        : emp
+    );
+
+    if (saveEmployeesToStorage(updatedEmployees)) {
+      setEmployees(updatedEmployees);
+      setShowTargetModal(false);
+      setSelectedEmployee(null);
+      setTargetData({ monthlyTarget: "", incentiveRate: "" });
+      setMessage({ type: "success", text: "Target and incentive updated!" });
+      setTimeout(() => setMessage(null), 3000);
+    } else {
+      setMessage({ type: "error", text: "Failed to update target" });
+    }
+  };
+
+  // ESC key handler for back navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        if (showCreateModal) {
+          setShowCreateModal(false);
+        } else if (showEditModal) {
+          setShowEditModal(false);
+        } else if (showTargetModal) {
+          setShowTargetModal(false);
+        } else {
+          navigate(-1);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [navigate, showCreateModal, showEditModal, showTargetModal]);
 
   const filteredEmployees = employees.filter(emp => {
     const matchesSearch = !search || 
@@ -323,31 +376,6 @@ export default function EmployeeManagement() {
               value={formData.joiningDate}
               onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
               className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-            />
-          </div>
-          
-          {/* Monthly Target */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monthly Target (₹)</label>
-            <input
-              type="number"
-              value={formData.monthlyTarget}
-              onChange={(e) => setFormData({...formData, monthlyTarget: e.target.value})}
-              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-              placeholder="Sales target amount"
-            />
-          </div>
-          
-          {/* Incentive Rate */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Incentive Rate (%)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={formData.incentiveRate}
-              onChange={(e) => setFormData({...formData, incentiveRate: e.target.value})}
-              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-              placeholder="% of sales above target"
             />
           </div>
           
@@ -460,7 +488,7 @@ export default function EmployeeManagement() {
   );
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="p-6 min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
@@ -542,11 +570,18 @@ export default function EmployeeManagement() {
                     </div>
                   </div>
                   {canManage && (
-                    <div className="flex gap-2">
-                      <button onClick={() => openEditModal(emp)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => openTargetModal(emp)} 
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                        title="Set Target & Incentive"
+                      >
+                        <Target className="w-4 h-4 text-green-600" />
+                      </button>
+                      <button onClick={() => openEditModal(emp)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Edit Employee">
                         <Edit2 className="w-4 h-4 text-blue-600" />
                       </button>
-                      <button onClick={() => handleDeleteEmployee(emp.id)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                      <button onClick={() => handleDeleteEmployee(emp.id)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Delete Employee">
                         <Trash2 className="w-4 h-4 text-red-600" />
                       </button>
                     </div>
@@ -602,6 +637,79 @@ export default function EmployeeManagement() {
       {/* Modals */}
       {showCreateModal && <EmployeeModal isEdit={false} />}
       {showEditModal && <EmployeeModal isEdit={true} />}
+      
+      {/* Target & Incentive Modal */}
+      {showTargetModal && selectedEmployee && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-md p-6 m-4">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                  <Target className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Set Target & Incentive</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{selectedEmployee.name}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowTargetModal(false)} 
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Monthly Target (₹)
+                </label>
+                <input
+                  type="number"
+                  value={targetData.monthlyTarget}
+                  onChange={(e) => setTargetData({...targetData, monthlyTarget: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-green-500"
+                  placeholder="Enter monthly sales target"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-1">The sales amount employee needs to achieve per month</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Incentive Rate (%)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={targetData.incentiveRate}
+                  onChange={(e) => setTargetData({...targetData, incentiveRate: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-green-500"
+                  placeholder="Enter incentive percentage"
+                />
+                <p className="text-xs text-gray-500 mt-1">Percentage of sales amount above target as incentive</p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setShowTargetModal(false)}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveTarget}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                Save Target
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,17 +1,20 @@
 
 import { useLocation, Link } from "react-router-dom";
-import { ListTodo, NotepadText, RefreshCw, Wifi, WifiOff, Sun, Moon, Clock } from "lucide-react";
+import { ListTodo, NotepadText, RefreshCw, Wifi, WifiOff, Sun, Moon, Clock, Calendar } from "lucide-react";
 import { useAuth } from "../auth";
 import { useTheme } from "../theme";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import CalendarDropdown from "./CalendarDropdown";
 
 // Use environment variable for API URL, fallback to localhost
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function Navbar() {
+  // Memoize the clockRef so it is stable and not recreated on every render
+  const clockRef = useRef(null);
   const location = useLocation();
   const { user } = useAuth();
-  const { dark, setDark } = useTheme();
+  const { dark, setDark, currentTheme } = useTheme();
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | success | error
   const [tallyStatus, setTallyStatus] = useState("checking"); // checking | live | offline
   const [lastSync, setLastSync] = useState(null);
@@ -24,6 +27,12 @@ export default function Navbar() {
   const intervalRef = useRef();
   const autoSyncRef = useRef();
   const countdownRef = useRef();
+
+  // CalendarDropdown open state is managed here to prevent auto-close on child re-render
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  // Stable close handler prevents child re-render causing dropdown blink
+  const closeCalendar = useCallback(() => setCalendarOpen(false), [setCalendarOpen]);
+  useEffect(() => { if (process.env.NODE_ENV === 'development') console.log('calendarOpen changed ->', calendarOpen); }, [calendarOpen]);
 
   // Check Tally connection status
   const checkTallyStatus = async () => {
@@ -156,16 +165,58 @@ export default function Navbar() {
 
   const pageTitle = titles[location.pathname] || "CRM Panel";
 
+  // --- NavbarClock component (compact) ---
+  function NavbarClock({ open, setOpen, anchorRef }) {
+    const [now, setNow] = useState(new Date());
+    useEffect(() => {
+      const timer = setInterval(() => setNow(new Date()), 1000);
+      return () => clearInterval(timer);
+    }, []);
+    // Format time as HH:MM (no seconds for compact look)
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    // Format date as e.g. Feb 2
+    const date = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return (
+      <div className="relative" ref={anchorRef}>
+        <button
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-700 hover:from-blue-100 hover:to-purple-100 dark:hover:from-gray-700 dark:hover:to-gray-600 border border-blue-200 dark:border-gray-600 shadow-sm transition cursor-pointer"
+          onClick={() => { if (process.env.NODE_ENV === 'development') console.log('clock clicked, open=', open); setOpen(!open); }}
+          title="Open Calendar & Reminders"
+        >
+          <Clock className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+          <span className="font-mono text-sm font-semibold text-blue-700 dark:text-blue-300">{time}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{date}</span>
+        </button>
+
+      </div>
+    );
+  }
+
   return (
-    <div className="h-14 bg-sky-100 dark:bg-gray-800 text-blue-900 dark:text-gray-100 border-b border-blue-300 dark:border-gray-700 flex items-center justify-between px-6 transition-all duration-300" style={{minHeight: 56, height: 56, alignItems: 'center'}}>
-      <h2 className="text-lg font-semibold text-blue-900 dark:text-gray-100">
+    <div 
+      className="h-14 flex items-center justify-between px-6 transition-all duration-300 backdrop-blur-xl" 
+      style={{
+        minHeight: 56, 
+        height: 56, 
+        alignItems: 'center',
+        backgroundColor: dark 
+          ? 'rgba(18, 18, 42, 0.65)' 
+          : 'rgba(255, 255, 255, 0.65)',
+        color: currentTheme?.text || (dark ? '#e2e8f0' : '#1e293b'),
+        borderBottom: `1px solid ${currentTheme?.border || (dark ? 'rgba(45, 45, 90, 0.5)' : 'rgba(226, 232, 240, 0.5)')}`
+      }}
+    >
+      <h2 className="text-lg font-semibold" style={{ color: currentTheme?.text }}>
         {pageTitle}
       </h2>
 
       <div className="flex items-center gap-4">
         <Link
           to="/todos"
-          className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors text-blue-900 dark:text-gray-100"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors"
+          style={{ color: currentTheme?.text }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = currentTheme?.surfaceAlt || (dark ? '#1a1a3a' : '#f8fafc')}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
         >
           <ListTodo className="w-5 h-5" />
           <span>Todos</span>
@@ -173,7 +224,10 @@ export default function Navbar() {
 
         <Link
           to="/logs"
-          className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors text-blue-900 dark:text-gray-100"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors"
+          style={{ color: currentTheme?.text }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = currentTheme?.surfaceAlt || (dark ? '#1a1a3a' : '#f8fafc')}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
         >
           <NotepadText className="w-5 h-5" />
           <span>Logs</span>
@@ -278,9 +332,10 @@ export default function Navbar() {
           />
         </button>
 
-        <div className="text-blue-800 dark:text-blue-200 font-medium">
-          Welcome, {user?.name || user?.username || "User"}
-        </div>
+        {/* Clock/Date with Calendar Dropdown */}
+        <NavbarClock open={calendarOpen} setOpen={setCalendarOpen} anchorRef={clockRef} />
+        {/* Render CalendarDropdown at Navbar level to avoid re-renders from the ticking clock */}
+        <CalendarDropdown open={calendarOpen} onClose={closeCalendar} anchorRef={clockRef} />
       </div>
     </div>
   );

@@ -1,10 +1,38 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
+import { useTheme } from "../theme.jsx";
 import { validatePassword } from "../utils/passwordValidator.js";
-import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, User, Mail, Phone, Edit2, Camera, X, Upload } from "lucide-react";
+import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, User, Mail, Phone, Edit2, Camera, X, Upload, Palette, Image, Sun, Moon } from "lucide-react";
+
+// Theme presets with preview colors
+const THEME_PRESETS = [
+  { id: 'default', colorKey: 'midnight', name: 'Default Blue', primary: '#3b82f6', background: '#ffffff', surface: '#f8fafc', text: '#1e293b', accent: '#6366f1' },
+  { id: 'dark', colorKey: 'midnight', name: 'Dark Mode', primary: '#6366f1', background: '#1e1f22', surface: '#2a2b2f', text: '#ffffff', accent: '#8b5cf6' },
+  { id: 'ocean', colorKey: 'ocean', name: 'Ocean', primary: '#0ea5e9', background: '#f0f9ff', surface: '#e0f2fe', text: '#0c4a6e', accent: '#06b6d4' },
+  { id: 'forest', colorKey: 'forest', name: 'Forest', primary: '#22c55e', background: '#f0fdf4', surface: '#dcfce7', text: '#14532d', accent: '#10b981' },
+  { id: 'sunset', colorKey: 'sunset', name: 'Sunset', primary: '#f97316', background: '#fff7ed', surface: '#fed7aa', text: '#7c2d12', accent: '#ef4444' },
+  { id: 'lavender', colorKey: 'cosmic', name: 'Lavender', primary: '#a855f7', background: '#faf5ff', surface: '#f3e8ff', text: '#581c87', accent: '#c084fc' },
+  { id: 'rose', colorKey: 'nebula', name: 'Rose', primary: '#ec4899', background: '#fdf2f8', surface: '#fce7f3', text: '#831843', accent: '#f43f5e' },
+  { id: 'slate', colorKey: 'arctic', name: 'Slate', primary: '#64748b', background: '#f8fafc', surface: '#f1f5f9', text: '#1e293b', accent: '#475569' },
+];
+
+// Background images for themes - each image gets color overlay from selected theme except custom
+const THEME_IMAGES = [
+  { id: 'none', name: 'No Image', url: null, useColorOverlay: false },
+  { id: 'gradient1', name: 'Blue Gradient', url: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', useColorOverlay: false },
+  { id: 'gradient2', name: 'Sunset Gradient', url: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', useColorOverlay: false },
+  { id: 'gradient3', name: 'Ocean Gradient', url: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', useColorOverlay: false },
+  { id: 'gradient4', name: 'Forest Gradient', url: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', useColorOverlay: false },
+  { id: 'abstract1', name: 'Abstract Wave', url: 'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=1920&q=80', useColorOverlay: true },
+  { id: 'nature1', name: 'Mountains', url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80', useColorOverlay: true },
+  { id: 'minimal1', name: 'Minimal Pattern', url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&q=80', useColorOverlay: true },
+];
 
 export default function Settings() {
+  const navigate = useNavigate();
   const { user, logout, updateUser } = useAuth();
+  const { currentTheme, setColorTheme, dark, setDark } = useTheme();
   const [formData, setFormData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -26,6 +54,27 @@ export default function Settings() {
   const [successMessage, setSuccessMessage] = useState("");
   const [detailsSuccessMessage, setDetailsSuccessMessage] = useState("");
   const [editingDetails, setEditingDetails] = useState(false);
+  
+  // Theme popup state
+  const [showThemePopup, setShowThemePopup] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('crm_selected_theme');
+      return saved || 'default';
+    } catch { return 'default'; }
+  });
+  const [selectedImage, setSelectedImage] = useState(() => {
+    try {
+      const saved = localStorage.getItem('crm_theme_image');
+      return saved || 'nature1'; // Default to mountain theme
+    } catch { return 'nature1'; }
+  });
+  const [customImageUrl, setCustomImageUrl] = useState(() => {
+    try {
+      const saved = localStorage.getItem('crm_custom_image');
+      return saved || '';
+    } catch { return ''; }
+  });
   
   // Profile Image State
   const [profileImage, setProfileImage] = useState(() => {
@@ -272,9 +321,83 @@ export default function Settings() {
     setDetailsLoading(false);
   };
 
+  // Lock body scroll when popup is open
+  useEffect(() => {
+    if (showThemePopup) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showThemePopup]);
+
+  // useEffect: Only update context color theme when selectedTheme changes (do NOT apply backgrounds - ThemeSettings handles that)
+  useEffect(() => {
+    const theme = THEME_PRESETS.find(t => t.id === selectedTheme) || THEME_PRESETS[0];
+    // Set theme in context (triggers ThemeProvider effect)
+    if (theme?.colorKey) setColorTheme(theme.colorKey);
+    // DO NOT apply backgrounds here - ThemeSettings.jsx manages document.documentElement backgrounds
+  }, [selectedTheme]);
+
   return (
     <div className="flex justify-center">
       <div className="space-y-6 w-full max-w-2xl">
+        {/* Themes Card */}
+        <div className="bg-white dark:bg-[#1e1f22] rounded-lg shadow-md border dark:border-gray-700 p-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Palette className="w-6 h-6" />
+                Appearance
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Customize your theme and background
+              </p>
+            </div>
+            <button
+              onClick={() => navigate('/settings/theme')}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium rounded-lg transition shadow-lg"
+            >
+              <Palette className="w-4 h-4" />
+              Choose Theme
+            </button>
+          </div>
+          
+          {/* Current Theme Preview */}
+          <div className="mt-4 flex items-center gap-4">
+            <div className="flex gap-2">
+              {THEME_PRESETS.find(t => t.id === selectedTheme) && (
+                <>
+                  <div 
+                    className="w-8 h-8 rounded-full border-2 border-white shadow" 
+                    style={{ backgroundColor: THEME_PRESETS.find(t => t.id === selectedTheme)?.primary }}
+                    title="Primary Color"
+                  />
+                  <div 
+                    className="w-8 h-8 rounded-full border-2 border-white shadow" 
+                    style={{ backgroundColor: THEME_PRESETS.find(t => t.id === selectedTheme)?.accent }}
+                    title="Accent Color"
+                  />
+                </>
+              )}
+            </div>
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              Current: {THEME_PRESETS.find(t => t.id === selectedTheme)?.name || 'Default'}
+            </span>
+            
+            {/* Dark Mode Toggle */}
+            <button
+              onClick={() => setDark(!dark)}
+              className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition"
+            >
+              {dark ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-gray-600" />}
+              <span className="text-sm">{dark ? 'Light' : 'Dark'}</span>
+            </button>
+          </div>
+        </div>
+
         {/* User Details Card */}
         <div className="bg-white dark:bg-[#1e1f22] rounded-lg shadow-md border dark:border-gray-700 p-8">
           <div className="mb-6 flex items-center justify-between">

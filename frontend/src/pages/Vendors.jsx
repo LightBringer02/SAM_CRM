@@ -480,7 +480,7 @@ export default function Vendors() {
   // If a group is specified, show ledger list
   if (group) {
     return (
-      <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+      <div className="p-6 min-h-screen">
         <LedgerListView groupKey={group} />
       </div>
     );
@@ -488,7 +488,7 @@ export default function Vendors() {
 
   // Otherwise show summary cards
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="p-6 min-h-screen">
       <VendorSummaryCards />
     </div>
   );

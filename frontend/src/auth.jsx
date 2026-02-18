@@ -111,6 +111,27 @@ export function AuthProvider({ children }) {
     };
   }, [user]);
 
+  // Helper to add log entry
+  const addLogEntry = (type, action, details = "", userId = null, userName = "System") => {
+    try {
+      const logs = JSON.parse(localStorage.getItem("crm_logs") || "[]");
+      const newLog = {
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        type,
+        action,
+        details,
+        userId: userId || "unknown",
+        userName: userName || "System"
+      };
+      logs.unshift(newLog);
+      if (logs.length > 1000) logs.splice(1000);
+      localStorage.setItem("crm_logs", JSON.stringify(logs));
+    } catch (err) {
+      console.error("Failed to add log:", err);
+    }
+  };
+
   const login = (emailOrUsername, password) => {
     const users = JSON.parse(localStorage.getItem("users") || "[]");
     const normalizedInput = emailOrUsername.toLowerCase().trim();
@@ -125,9 +146,13 @@ export function AuthProvider({ children }) {
       localStorage.setItem("currentUser", JSON.stringify(userWithoutPassword));
       // Update user activity on login
       localStorage.setItem(`user_activity_${foundUser.id}`, Date.now().toString());
+      // Add login log
+      addLogEntry("auth", "User Login", `${foundUser.username || foundUser.email} logged in`, foundUser.id, foundUser.username || foundUser.email);
       return { success: true, isNewUser: foundUser.isNewUser || false };
     }
 
+    // Log failed login attempt
+    addLogEntry("warning", "Failed Login Attempt", `Failed login attempt for: ${emailOrUsername}`);
     return { success: false, error: "Invalid username/email or password" };
   };
 
@@ -161,6 +186,10 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    // Add logout log before clearing user
+    if (user) {
+      addLogEntry("auth", "User Logout", `${user.username || user.email} logged out`, user.id, user.username || user.email);
+    }
     setUser(null);
     localStorage.removeItem("currentUser");
   };
@@ -234,7 +263,8 @@ export function AuthProvider({ children }) {
       admin: ['view_dashboard', 'view_vouchers', 'edit_vouchers', 'delete_vouchers', 'export_vouchers', 
               'view_inventory', 'manage_inventory', 'view_ledgers', 'manage_ledgers', 
               'view_reports', 'export_reports', 'view_employees', 'manage_employees',
-              'view_users', 'manage_users', 'view_settings', 'manage_settings', 'view_logs'],
+              'view_users', 'manage_users', 'view_settings', 'manage_settings', 'view_logs',
+              'view_rates', 'view_blacklisted_ledgers'],
       manager: ['view_dashboard', 'view_vouchers', 'edit_vouchers', 'view_inventory', 
                 'view_ledgers', 'view_reports', 'export_reports', 'view_employees'],
       staff: ['view_dashboard', 'view_vouchers', 'view_inventory', 'view_ledgers'],

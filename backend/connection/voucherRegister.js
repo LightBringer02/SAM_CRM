@@ -702,7 +702,7 @@ function parseVoucher(voucher) {
   let bankLedger = '';
   let billsApplied = [];
 
-  if (typeUpper === 'RECEIPT' || typeUpper === 'PAYMENT') {
+  if (typeUpper === 'RECEIPT' || typeUpper === 'PAYMENT' || typeUpper === 'CONTRA') {
     // First priority: Check bank allocations which are definitive
     let hasBankAllocation = false;
     let hasCashLedger = false;

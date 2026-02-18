@@ -666,12 +666,20 @@ export default function VouchersPage() {
       
       // Determine if this is a bank/cheque transaction or cash transaction
       const isBankType = payType === 'bank' || payType === 'cheque' || payType === 'dd';
-      const isCashType = payType === 'cash';
+      const isCashType = payType === 'cash' || payType === '';
       const hasBankInName = bankNameLower.includes('bank');
       const hasCashInName = bankNameLower.includes('cash');
       
-      // Priority: Explicit pay_type > bank_ledger name detection
-      // If payType is explicitly bank/cheque/dd, show as cheque
+      // Priority 1: If bank_ledger contains 'cash', always show as Cash only
+      if (hasCashInName) {
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium text-gray-900 dark:text-gray-100">Cash</span>
+          </div>
+        );
+      }
+      
+      // Priority 2: If payType is explicitly bank/cheque/dd, show as cheque
       if (isBankType) {
         return (
           <div className="flex flex-col">
@@ -683,28 +691,7 @@ export default function VouchersPage() {
         );
       }
       
-      // If payType is explicitly cash, show only "Cash" - no bank name
-      if (isCashType) {
-        return (
-          <div className="flex flex-col">
-            <span className="font-medium text-gray-900 dark:text-gray-100">Cash</span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">Cash Payment</span>
-          </div>
-        );
-      }
-      
-      // Fallback: Detect from bank_ledger name
-      // If bank_ledger contains 'cash' (case-insensitive), treat as cash
-      if (hasCashInName && !hasBankInName) {
-        return (
-          <div className="flex flex-col">
-            <span className="font-medium text-gray-900 dark:text-gray-100">{bankName}</span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">Cash Payment</span>
-          </div>
-        );
-      }
-      
-      // If bank_ledger contains 'bank', treat as bank/cheque
+      // Priority 3: If bank_ledger contains 'bank', treat as bank/cheque
       if (hasBankInName) {
         return (
           <div className="flex flex-col">
@@ -712,6 +699,15 @@ export default function VouchersPage() {
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {checkNo ? `Cheque/DD (${checkNo})` : 'Cheque/DD'}
             </span>
+          </div>
+        );
+      }
+      
+      // Priority 4: If payType is cash or empty with no bank, show Cash only
+      if (isCashType || !bankName) {
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium text-gray-900 dark:text-gray-100">Cash</span>
           </div>
         );
       }
@@ -790,7 +786,7 @@ export default function VouchersPage() {
   };
 
   return (
-    <div className="p-6 bg-white dark:bg-gray-900 min-h-screen">
+    <div className="min-h-screen">
       {/* Inject print styles */}
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />
       
@@ -1089,7 +1085,8 @@ export default function VouchersPage() {
           const qty = Math.abs(Number(item.qty) || 0);
           const rate = Math.abs(Number(item.rate) || 0);
           const gst = item.gst || {};
-          const lineAmount = qty * rate;
+          // Use backend amount if present and > 0, else fallback to qty*rate
+          let lineAmount = (typeof item.amount === 'number' && item.amount !== 0) ? item.amount : qty * rate;
           // Robust GST percent extraction
           let cgstPercent = (item.CGSTPERCENT !== undefined && item.CGSTPERCENT !== 0) ? Number(item.CGSTPERCENT) : undefined;
           let sgstPercent = (item.SGSTPERCENT !== undefined && item.SGSTPERCENT !== 0) ? Number(item.SGSTPERCENT) : undefined;
@@ -1140,13 +1137,13 @@ export default function VouchersPage() {
             onClick={() => setSelectedVoucher(null)}
           >
             <div 
-              className="bg-white border border-gray-400 flex flex-col shadow-xl print:!shadow-none print:!border-none" 
+              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 flex flex-col shadow-xl print:!shadow-none print:!border-none text-gray-900 dark:text-gray-100" 
               style={{ width: "210mm", maxWidth: "98vw", maxHeight: "95vh", minWidth: "800px" }} 
               onClick={e => e.stopPropagation()}
             >
               {/* Modal Header - Fixed - Hidden when printing */}
-              <div className="flex justify-between items-center p-4 border-b border-gray-300 bg-gray-50 print-hide">
-                <h2 className="text-lg font-bold">TAX INVOICE</h2>
+              <div className="flex justify-between items-center p-4 border-b border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 print-hide">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">TAX INVOICE</h2>
                 <div className="flex gap-2">
                   <button 
                     className="px-3 py-1 bg-gray-600 text-white text-sm font-semibold rounded" 
@@ -1176,14 +1173,14 @@ export default function VouchersPage() {
               </div>
               
               {/* Scrollable Invoice Content - This is what gets printed */}
-              <div ref={invoiceRef} className="invoice-print-area flex-1 overflow-auto p-6 bg-white print:!overflow-visible print:!max-h-none" style={{minWidth: '760px'}}>
+              <div ref={invoiceRef} className="invoice-print-area flex-1 overflow-auto p-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 print:!overflow-visible print:!max-h-none" style={{minWidth: '760px'}}>
                 {/* Invoice Header */}
-                <div className="text-center border-b border-gray-400 pb-2 mb-4">
-                  <h1 className="text-xl font-bold">TAX INVOICE</h1>
+                <div className="text-center border-b border-gray-400 dark:border-gray-700 pb-2 mb-4">
+                  <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">TAX INVOICE</h1>
                 </div>
                 
                 {/* Supplier and Invoice Details - Enhanced Layout like Tax Invoice */}
-                <div className="border border-gray-400 mb-0">
+                <div className="border border-gray-400 dark:border-gray-700 mb-0 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
                   <div className="flex flex-nowrap">
                     {/* Left: Supplier Details */}
                     <div className="flex-1 min-w-[280px] p-3 border-r border-gray-400">
@@ -1251,7 +1248,7 @@ export default function VouchersPage() {
                 </div>
                 
                 {/* Consignee (Ship to) and Buyer (Bill to) */}
-                <div className="border border-t-0 border-gray-400 mb-0">
+                <div className="border border-t-0 border-gray-400 dark:border-gray-700 mb-0 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
                   <div className="flex flex-nowrap">
                     {/* Consignee (Ship to) */}
                     <div className="flex-1 min-w-[280px] p-3 border-r border-gray-400">
@@ -1275,7 +1272,7 @@ export default function VouchersPage() {
                 </div>
                 
                 {/* Buyer (Bill to) */}
-                <div className="border border-t-0 border-gray-400 p-3 mb-4">
+                <div className="border border-t-0 border-gray-400 dark:border-gray-700 p-3 mb-4 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
                   <p className="font-semibold text-xs mb-1">Buyer (Bill to)</p>
                   <p className="font-bold text-sm whitespace-nowrap">{buyerName || '-'}</p>
                   <p className="text-xs">{buyerAddress || '-'}</p>
@@ -1287,10 +1284,10 @@ export default function VouchersPage() {
                 </div>
                 
                 {/* Items Table */}
-                <div className="border border-gray-400 mb-2 print:break-inside-auto">
-                  <table className="w-full text-xs border-collapse">
+                <div className="border border-gray-400 dark:border-gray-700 mb-2 print:break-inside-auto bg-white dark:bg-gray-900">
+                  <table className="w-full text-xs border-collapse bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
                     <thead>
-                      <tr className="bg-gray-100">
+                      <tr className="bg-gray-100 dark:bg-gray-800">
                         <th className="border border-gray-300 p-2 w-10 text-center" style={{minHeight:32}}>Sl</th>
                         <th className="border border-gray-300 p-2 text-left" style={{minHeight:32}}>Description</th>
                         <th className="border border-gray-300 p-2 w-20 text-center" style={{minHeight:32}}>HSN/SAC</th>
@@ -1307,10 +1304,10 @@ export default function VouchersPage() {
                           <td className="border border-gray-300 p-2 text-center" style={{minHeight:32}}>{idx + 1}</td>
                           <td className="border border-gray-300 p-2" style={{minHeight:32}}>{item.name || ''}</td>
                           <td className="border border-gray-300 p-2 text-center" style={{minHeight:32}}>{item.hsn || ''}</td>
-                          <td className="border border-gray-300 p-2 text-center" style={{minHeight:32}}>{item.qty || ''}</td>
-                          <td className="border border-gray-300 p-2 text-center" style={{minHeight:32}}>{item.per || ''}</td>
-                          <td className="border border-gray-300 p-2 text-right" style={{minHeight:32}}>₹{(item.rate || 0).toFixed(2)}</td>
-                          <td className="border border-gray-300 p-2 text-right" style={{minHeight:32}}>₹{(item.amount || 0).toFixed(2)}</td>
+                          <td className="border border-gray-300 dark:border-gray-700 p-2 text-center" style={{minHeight:32}}>{(item.qty === 0 || item.qty === '' || item.qty === undefined) ? 'NA' : item.qty}</td>
+                          <td className="border border-gray-300 dark:border-gray-700 p-2 text-center" style={{minHeight:32}}>{(!item.per || item.per === '') ? 'NA' : item.per}</td>
+                          <td className="border border-gray-300 dark:border-gray-700 p-2 text-right" style={{minHeight:32}}>{(item.qty === 0 || item.qty === '' || item.qty === undefined) && (!item.per || item.per === '') ? 'NA' : `₹${(item.rate || 0).toFixed(2)}`}</td>
+                          <td className="border border-gray-300 dark:border-gray-700 p-2 text-right" style={{minHeight:32}}>₹{(typeof item.amount === 'number' ? item.amount : 0).toFixed(2)}</td>
                                 <td className="border border-gray-300 p-2 text-center" style={{minHeight:32}}>
                                     {/* GST Percent Row: Show CGST/SGST/IGST percent from backend fields, fallback to item.gst if missing */}
                                     {(() => {
@@ -1346,11 +1343,11 @@ export default function VouchersPage() {
                 
                 {/* HSN/SAC Summary Table */}
                 {computedItems.length > 0 && (
-                <div className="w-full mb-2">
-                  <p className="text-xs font-semibold mb-1">HSN/SAC Summary</p>
-                  <table className="border border-gray-400 text-xs w-full">
+                <div className="w-full mb-2 bg-white dark:bg-gray-900">
+                  <p className="text-xs font-semibold mb-1 text-gray-900 dark:text-gray-100">HSN/SAC Summary</p>
+                  <table className="border border-gray-400 dark:border-gray-700 text-xs w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
                     <thead>
-                      <tr className="bg-gray-100">
+                      <tr className="bg-gray-100 dark:bg-gray-800">
                         <th className="border border-gray-300 p-1 text-left">HSN/SAC</th>
                         <th className="border border-gray-300 p-1 text-right">Taxable Value</th>
                         <th className="border border-gray-300 p-1 text-center">GST Rate</th>
@@ -1376,13 +1373,13 @@ export default function VouchersPage() {
                         });
                         return Object.entries(hsnGroups).map(([hsn, data]) => (
                           <tr key={hsn}>
-                            <td className="border border-gray-300 p-1">{hsn}</td>
-                            <td className="border border-gray-300 p-1 text-right">₹{data.taxable.toFixed(2)}</td>
-                            <td className="border border-gray-300 p-1 text-center">{data.rate}%</td>
-                            <td className="border border-gray-300 p-1 text-right">₹{data.cgst.toFixed(2)}</td>
-                            <td className="border border-gray-300 p-1 text-right">₹{data.sgst.toFixed(2)}</td>
-                            <td className="border border-gray-300 p-1 text-right">₹{data.igst.toFixed(2)}</td>
-                            <td className="border border-gray-300 p-1 text-right">₹{(data.cgst + data.sgst + data.igst).toFixed(2)}</td>
+                            <td className="border border-gray-300 dark:border-gray-700 p-1">{hsn}</td>
+                            <td className="border border-gray-300 dark:border-gray-700 p-1 text-right">₹{data.taxable.toFixed(2)}</td>
+                            <td className="border border-gray-300 dark:border-gray-700 p-1 text-center">{data.rate}%</td>
+                            <td className="border border-gray-300 dark:border-gray-700 p-1 text-right">₹{data.cgst.toFixed(2)}</td>
+                            <td className="border border-gray-300 dark:border-gray-700 p-1 text-right">₹{data.sgst.toFixed(2)}</td>
+                            <td className="border border-gray-300 dark:border-gray-700 p-1 text-right">₹{data.igst.toFixed(2)}</td>
+                            <td className="border border-gray-300 dark:border-gray-700 p-1 text-right">₹{(data.cgst + data.sgst + data.igst).toFixed(2)}</td>
                           </tr>
                         ));
                       })()}
@@ -1392,10 +1389,10 @@ export default function VouchersPage() {
                 )}
                 
                 {/* GST Summary Sub-Table (after items, before Amount in Words) */}
-                <div className="w-full mb-2">
-                  <table className="border border-gray-400 rounded bg-gray-50 text-xs w-full">
+                <div className="w-full mb-2 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                  <table className="border border-gray-400 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-900 text-xs w-full text-gray-900 dark:text-gray-100">
                     <thead>
-                      <tr>
+                      <tr className="bg-gray-100 dark:bg-gray-800">
                         <th className="p-2 text-left">GST Type</th>
                         <th className="p-2 text-right">Amount</th>
                       </tr>

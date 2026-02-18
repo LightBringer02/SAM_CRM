@@ -7,6 +7,8 @@ const vouchersRoutes = require('./routes/vouchers');
 const ledgersRoutes = require('./routes/ledgers');
 const systemConfigRoutes = require('./routes/systemConfig');
 const syncRoutes = require('./routes/sync');
+const blacklistRoutes = require('./routes/blacklist');
+const permissionsRoutes = require('./routes/permissions');
 const { extractUser, checkServiceEnabled } = require('./middleware/authMiddleware');
 const { applySecurityMiddleware } = require('./middleware/securityMiddleware');
 
@@ -117,6 +119,10 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/vouchers', vouchersRoutes);
 // Ledgers API
 app.use('/api/ledgers', ledgersRoutes);
+// Blacklist API (admin only for modifications)
+app.use('/api/blacklist', blacklistRoutes);
+// Permissions API (RBAC)
+app.use('/api/permissions', permissionsRoutes);
 
 // ========================================
 // HEALTH & STATUS ENDPOINTS
@@ -182,8 +188,8 @@ app.listen(PORT, async () => {
   if (dbModule) {
     try {
       const initResult = await dbModule.initialize({
-        runMigrations: false,  // Set to true to auto-run migrations
-        startWorker: false,    // Set to true to auto-start queue worker
+        runMigrations: true,   // Run migrations to create backup tables
+        startWorker: true,     // Start queue worker for background jobs
         startBackupScheduler: false
       });
       console.log('Database module initialized:', initResult.success ? 'OK' : initResult.error);

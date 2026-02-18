@@ -12,8 +12,10 @@ const ALL_PERMISSIONS = [
   { id: "export_vouchers", name: "Export Vouchers", category: "Vouchers" },
   { id: "view_inventory", name: "View Inventory", category: "Inventory" },
   { id: "manage_inventory", name: "Manage Inventory", category: "Inventory" },
+  { id: "view_rates", name: "View Item Rates", category: "Inventory" },
   { id: "view_ledgers", name: "View Ledgers", category: "Ledgers" },
   { id: "manage_ledgers", name: "Manage Ledgers", category: "Ledgers" },
+  { id: "view_blacklisted_ledgers", name: "View Blacklisted Ledgers", category: "Ledgers" },
   { id: "view_reports", name: "View Reports", category: "Reports" },
   { id: "export_reports", name: "Export Reports", category: "Reports" },
   { id: "view_employees", name: "View Employees", category: "Employees" },
@@ -256,7 +258,7 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-[#0f172a] min-h-screen">
+    <div className="p-6 min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">

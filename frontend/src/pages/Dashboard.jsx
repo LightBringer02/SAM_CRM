@@ -1,4 +1,5 @@
 import { useAuth } from "../auth";
+import { useTheme } from "../theme";
 import { useState, useEffect } from "react";
 import { 
   FileText, Edit3, Trash2, Clock, ChevronRight, Plus, TrendingUp, TrendingDown,
@@ -12,6 +13,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function Dashboard() {
   const { user, isAdminOrHigher, isRoot } = useAuth();
+  const { currentTheme, dark } = useTheme();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalSales: 0,
@@ -33,20 +35,60 @@ export default function Dashboard() {
     const loadDashboardData = async () => {
       setLoading(true);
       try {
-        // Try to fetch voucher stats
+        // Fetch all vouchers to get real counts and amounts
         try {
-          const salesRes = await axios.get(`${API_BASE}/api/vouchers?type=sales&limit=1`);
-          const purchaseRes = await axios.get(`${API_BASE}/api/vouchers?type=purchase&limit=1`);
-          const receiptRes = await axios.get(`${API_BASE}/api/vouchers?type=receipt&limit=1`);
-          const paymentRes = await axios.get(`${API_BASE}/api/vouchers?type=payment&limit=1`);
+          const vouchersRes = await axios.get(`${API_BASE}/api/vouchers`);
+          const allVouchers = vouchersRes.data?.vouchers || vouchersRes.data || [];
           
-          // Get counts from response
+          // Calculate totals by type
+          const salesVouchers = allVouchers.filter(v => (v.voucher_type || '').toLowerCase() === 'sales');
+          const purchaseVouchers = allVouchers.filter(v => (v.voucher_type || '').toLowerCase() === 'purchase');
+          const receiptVouchers = allVouchers.filter(v => (v.voucher_type || '').toLowerCase() === 'receipt');
+          const paymentVouchers = allVouchers.filter(v => (v.voucher_type || '').toLowerCase() === 'payment');
+          
+          // Calculate amounts
+          const salesAmount = salesVouchers.reduce((sum, v) => sum + (parseFloat(v.amount) || 0), 0);
+          const purchaseAmount = purchaseVouchers.reduce((sum, v) => sum + (parseFloat(v.amount) || 0), 0);
+          const receiptAmount = receiptVouchers.reduce((sum, v) => sum + (parseFloat(v.amount) || 0), 0);
+          const paymentAmount = paymentVouchers.reduce((sum, v) => sum + (parseFloat(v.amount) || 0), 0);
+          
+          // Count pending invoices (unpaid sales)
+          const pendingCount = salesVouchers.filter(v => v.payment_status === 'Pending' || v.unpaid_amount > 0).length;
+          
           setStats(prev => ({
             ...prev,
-            totalSales: salesRes.data?.total || salesRes.data?.data?.length || 0,
-            totalPurchases: purchaseRes.data?.total || purchaseRes.data?.data?.length || 0,
-            totalReceipts: receiptRes.data?.total || receiptRes.data?.data?.length || 0,
-            totalPayments: paymentRes.data?.total || paymentRes.data?.data?.length || 0
+            totalSales: salesVouchers.length,
+            totalPurchases: purchaseVouchers.length,
+            totalReceipts: receiptVouchers.length,
+            totalPayments: paymentVouchers.length,
+            salesAmount,
+            purchaseAmount,
+            receiptAmount,
+            paymentAmount,
+            pendingInvoices: pendingCount
+          }));
+        } catch (err) {
+          console.error("Failed to fetch vouchers:", err);
+        }
+
+        // Try to fetch inventory count
+        try {
+          const invRes = await axios.get(`${API_BASE}/api/inventory`);
+          const items = invRes.data?.items || invRes.data || [];
+          setStats(prev => ({ ...prev, inventoryItems: items.length }));
+        } catch {}
+
+        // Try to fetch ledger count
+        try {
+          const ledgerRes = await axios.get(`${API_BASE}/api/ledgers/summary`);
+          const totals = ledgerRes.data?.totals || {};
+          setStats(prev => ({ 
+            ...prev, 
+            ledgerCount: (totals.debtors || 0) + (totals.creditors || 0),
+            debtorsCount: totals.debtors || 0,
+            creditorsCount: totals.creditors || 0,
+            totalReceivable: totals.totalReceivable || 0,
+            totalPayable: totals.totalPayable || 0
           }));
         } catch {}
 
@@ -54,10 +96,13 @@ export default function Dashboard() {
         const employees = JSON.parse(localStorage.getItem("crm_employees") || "[]");
         const todos = JSON.parse(localStorage.getItem("crm_todos") || "[]");
         const followups = JSON.parse(localStorage.getItem("crm_followups") || "[]");
+        const orders = JSON.parse(localStorage.getItem("crm_orders") || "[]");
 
         setStats(prev => ({
           ...prev,
-          employeeCount: employees.length
+          employeeCount: employees.length,
+          ordersCount: orders.length,
+          pendingOrders: orders.filter(o => o.status === 'pending' || o.status === 'confirmed').length
         }));
 
         // Get pending tasks
@@ -72,17 +117,15 @@ export default function Dashboard() {
           .slice(0, 5);
         setUpcomingFollowups(upcoming);
 
-        // Generate recent activity
-        const activities = [];
-        if (todos.length > 0) {
-          const recentTodo = todos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-          if (recentTodo) activities.push({ type: "task", message: `Task created: ${recentTodo.title}`, time: recentTodo.createdAt });
-        }
-        if (employees.length > 0) {
-          const recentEmp = employees.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-          if (recentEmp) activities.push({ type: "employee", message: `Employee added: ${recentEmp.name}`, time: recentEmp.createdAt });
-        }
-        setRecentActivity(activities.slice(0, 5));
+        // Generate recent activity from logs
+        const logs = JSON.parse(localStorage.getItem("crm_logs") || "[]");
+        const recentLogs = logs.slice(0, 5).map(log => ({
+          type: log.type,
+          message: `${log.action}: ${log.details || ''}`,
+          time: log.timestamp,
+          user: log.userName
+        }));
+        setRecentActivity(recentLogs);
 
       } catch (err) {
         console.error("Dashboard load error:", err);
@@ -120,22 +163,22 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="min-h-screen" style={{ color: currentTheme?.text }}>
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
+        <h1 className="text-3xl font-bold" style={{ color: currentTheme?.text }}>Dashboard</h1>
+        <p className="mt-1" style={{ color: currentTheme?.textMuted }}>
           Welcome back, {user?.name || user?.username}! Here's your business overview.
         </p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+        <div className="rounded-xl p-6 border shadow-sm" style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: currentTheme?.border }}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Sales</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalSales}</p>
+              <p className="text-sm" style={{ color: currentTheme?.textMuted }}>Total Sales</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: currentTheme?.text }}>{stats.totalSales}</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
               <TrendingUp className="w-6 h-6 text-green-600" />
@@ -147,11 +190,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+        <div className="rounded-xl p-6 border shadow-sm" style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: currentTheme?.border }}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Purchases</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalPurchases}</p>
+              <p className="text-sm" style={{ color: currentTheme?.textMuted }}>Total Purchases</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: currentTheme?.text }}>{stats.totalPurchases}</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
               <ShoppingCart className="w-6 h-6 text-red-600" />
@@ -163,11 +206,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+        <div className="rounded-xl p-6 border shadow-sm" style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: currentTheme?.border }}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Receipts</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalReceipts}</p>
+              <p className="text-sm" style={{ color: currentTheme?.textMuted }}>Receipts</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: currentTheme?.text }}>{stats.totalReceipts}</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
               <Receipt className="w-6 h-6 text-blue-600" />
@@ -178,11 +221,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+        <div className="rounded-xl p-6 border shadow-sm" style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: currentTheme?.border }}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Payments</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalPayments}</p>
+              <p className="text-sm" style={{ color: currentTheme?.textMuted }}>Payments</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: currentTheme?.text }}>{stats.totalPayments}</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
               <CreditCard className="w-6 h-6 text-orange-600" />
@@ -196,7 +239,7 @@ export default function Dashboard() {
 
       {/* Quick Actions */}
       <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
+        <h2 className="text-lg font-semibold mb-4" style={{ color: currentTheme?.text }}>Quick Actions</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {quickActions.map((action, idx) => {
             const Icon = action.icon;
@@ -204,14 +247,20 @@ export default function Dashboard() {
               <button
                 key={idx}
                 onClick={() => navigate(action.path)}
-                className="group bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 transition-all text-center"
+                className="group rounded-xl p-4 border hover:shadow-lg transition-all text-center"
+                style={{ 
+                  backgroundColor: currentTheme?.surfaceAlt, 
+                  borderColor: currentTheme?.border 
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = currentTheme?.primary}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = currentTheme?.border}
               >
                 <div className={`w-12 h-12 ${action.color} rounded-xl flex items-center justify-center mx-auto mb-3`}>
                   <Icon className="w-6 h-6 text-white" />
                 </div>
-                <p className="font-medium text-gray-900 dark:text-white text-sm">{action.title}</p>
+                <p className="font-medium text-sm" style={{ color: currentTheme?.text }}>{action.title}</p>
                 {action.count !== undefined && (
-                  <p className="text-xs text-gray-500 mt-1">{action.count} items</p>
+                  <p className="text-xs mt-1" style={{ color: currentTheme?.textMuted }}>{action.count} items</p>
                 )}
               </button>
             );
@@ -222,25 +271,25 @@ export default function Dashboard() {
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pending Tasks */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-blue-600" />
+        <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: currentTheme?.border }}>
+          <div className="p-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${currentTheme?.border}` }}>
+            <h3 className="font-semibold flex items-center gap-2" style={{ color: currentTheme?.text }}>
+              <CheckCircle className="w-5 h-5" style={{ color: currentTheme?.primary }} />
               Pending Tasks
             </h3>
-            <button onClick={() => navigate("/todos")} className="text-sm text-blue-600 hover:underline">View All</button>
+            <button onClick={() => navigate("/todos")} className="text-sm hover:underline" style={{ color: currentTheme?.primary }}>View All</button>
           </div>
           <div className="p-4">
             {pendingTasks.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">No pending tasks</p>
+              <p className="text-center py-4" style={{ color: currentTheme?.textMuted }}>No pending tasks</p>
             ) : (
               <div className="space-y-3">
                 {pendingTasks.map(task => (
-                  <div key={task.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div key={task.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: currentTheme?.surface }}>
                     <div className={`w-2 h-2 rounded-full ${task.priority === "high" ? "bg-red-500" : task.priority === "medium" ? "bg-yellow-500" : "bg-green-500"}`} />
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</p>
-                      {task.dueDate && <p className="text-xs text-gray-500">Due: {formatDate(task.dueDate)}</p>}
+                      <p className="text-sm font-medium" style={{ color: currentTheme?.text }}>{task.title}</p>
+                      {task.dueDate && <p className="text-xs" style={{ color: currentTheme?.textMuted }}>Due: {formatDate(task.dueDate)}</p>}
                     </div>
                   </div>
                 ))}
@@ -250,25 +299,25 @@ export default function Dashboard() {
         </div>
 
         {/* Upcoming Follow-ups */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+        <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: currentTheme?.border }}>
+          <div className="p-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${currentTheme?.border}` }}>
+            <h3 className="font-semibold flex items-center gap-2" style={{ color: currentTheme?.text }}>
               <Bell className="w-5 h-5 text-orange-600" />
               Upcoming Follow-ups
             </h3>
-            <button onClick={() => navigate("/todos")} className="text-sm text-blue-600 hover:underline">View All</button>
+            <button onClick={() => navigate("/todos")} className="text-sm hover:underline" style={{ color: currentTheme?.primary }}>View All</button>
           </div>
           <div className="p-4">
             {upcomingFollowups.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">No upcoming follow-ups</p>
+              <p className="text-center py-4" style={{ color: currentTheme?.textMuted }}>No upcoming follow-ups</p>
             ) : (
               <div className="space-y-3">
                 {upcomingFollowups.map(followup => (
-                  <div key={followup.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <Calendar className="w-5 h-5 text-blue-500" />
+                  <div key={followup.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: currentTheme?.surface }}>
+                    <Calendar className="w-5 h-5" style={{ color: currentTheme?.primary }} />
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{followup.title}</p>
-                      <p className="text-xs text-gray-500">{followup.contactName} • {formatDate(followup.scheduledDate)}</p>
+                      <p className="text-sm font-medium" style={{ color: currentTheme?.text }}>{followup.title}</p>
+                      <p className="text-xs" style={{ color: currentTheme?.textMuted }}>{followup.contactName} • {formatDate(followup.scheduledDate)}</p>
                     </div>
                   </div>
                 ))}
