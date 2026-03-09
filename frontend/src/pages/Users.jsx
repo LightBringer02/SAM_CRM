@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../auth";
-import { Eye, EyeOff, Plus, Trash2, Copy, Settings, RotateCcw, Shield } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, Copy, Settings, RotateCcw, Shield, ChevronDown } from "lucide-react";
 
 export default function Users() {
   const { users, currentUser, deleteUser, isRoot, isAdminOrHigher } = useAuth();
@@ -8,11 +8,13 @@ export default function Users() {
   const [showTempPasswordSettings, setShowTempPasswordSettings] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [username, setUsername] = useState("");
+  const [selectedRole, setSelectedRole] = useState("user");
   const [tempPassword, setTempPassword] = useState("TempPassword@123");
   const [showTempPassword, setShowTempPassword] = useState(false);
   const [createdUserInfo, setCreatedUserInfo] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [availableRoles, setAvailableRoles] = useState([]);
 
   const TEMP_PASSWORD_TEMPLATE = "TempPassword@123";
 
@@ -23,6 +25,52 @@ export default function Users() {
       setTempPassword(savedTempPassword);
     }
   }, []);
+
+  // Load available roles from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("system_roles");
+      if (stored) {
+        let roles = JSON.parse(stored);
+        // Hide root from non-root users
+        if (!isRoot()) {
+          roles = roles.filter(r => r.id !== "root");
+        }
+        setAvailableRoles(roles);
+      } else {
+        // Fallback predefined
+        const fallback = [
+          { id: "admin", name: "Admin" },
+          { id: "manager", name: "Manager" },
+          { id: "staff", name: "Staff" },
+          { id: "user", name: "User" },
+        ];
+        if (isRoot()) fallback.unshift({ id: "root", name: "Root" });
+        setAvailableRoles(fallback);
+      }
+    } catch {
+      setAvailableRoles([{ id: "user", name: "User" }]);
+    }
+  }, []);
+
+  const handleChangeRole = (userId, newRole) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+    // Prevent changing root user role unless you are root
+    if (target.role === "root" && !isRoot()) return;
+    // Prevent non-root from assigning admin role
+    if (newRole === "admin" && !isRoot()) return;
+    // Prevent non-root from assigning root role
+    if (newRole === "root" && !isRoot()) return;
+
+    const existingUsers = JSON.parse(localStorage.getItem("users") || "[]");
+    const updatedUsers = existingUsers.map(u =>
+      u.id === userId ? { ...u, role: newRole } : u
+    );
+    localStorage.setItem("users", JSON.stringify(updatedUsers));
+    // Force re-render
+    window.location.reload();
+  };
 
   // Access control - allow admin and root
   if (!isAdminOrHigher()) {
@@ -57,7 +105,7 @@ export default function Users() {
       username: username.trim(),
       email: "",
       password: tempPassword,
-      role: "user",
+      role: selectedRole,
       createdAt: new Date().toLocaleDateString(),
       isNewUser: true,
     };
@@ -151,7 +199,7 @@ export default function Users() {
   return (
     <div className="w-full p-6 bg-white text-gray-900 transition-colors duration-300">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">
+        <h1 className="text-3xl font-bold text-gray-900 glass-text">
           User Management
         </h1>
         <div className="flex gap-2">
@@ -168,6 +216,7 @@ export default function Users() {
               setShowAddModal(true);
               setCreatedUserInfo(null);
               setUsername("");
+              setSelectedRole("user");
             }}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
           >
@@ -238,17 +287,46 @@ export default function Users() {
                   {user.email || "-"}
                 </td>
                 <td className="px-4 py-3 text-sm border-b border-gray-200">
-                  <span
-                    className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                      user.role === "admin"
-                        ? "bg-red-100 text-red-800"
-                        : user.role === "manager"
-                        ? "bg-yellow-100 text-yellow-800"
-                        : "bg-blue-100 text-blue-800"
-                    }`}
-                  >
-                    {user.role}
-                  </span>
+                  {/* Role: show dropdown for admin/root, badge for others */}
+                  {user.id !== currentUser.id && isAdminOrHigher() && user.role !== "root" ? (
+                    <select
+                      value={user.role}
+                      onChange={(e) => handleChangeRole(user.id, e.target.value)}
+                      className={`px-2 py-1 rounded-full text-xs font-semibold border-0 cursor-pointer appearance-none pr-6 ${
+                        user.role === "admin"
+                          ? "bg-red-100 text-red-800"
+                          : user.role === "manager"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-blue-100 text-blue-800"
+                      }`}
+                      style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center' }}
+                    >
+                      {availableRoles
+                        .filter(r => {
+                          // non-root admins can't assign root or admin roles
+                          if (!isRoot() && (r.id === "root" || r.id === "admin")) return false;
+                          return true;
+                        })
+                        .map(r => (
+                          <option key={r.id} value={r.id}>{r.name || r.id}</option>
+                        ))
+                      }
+                    </select>
+                  ) : (
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                        user.role === "admin"
+                          ? "bg-red-100 text-red-800"
+                          : user.role === "root"
+                          ? "bg-purple-100 text-purple-800"
+                          : user.role === "manager"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-blue-100 text-blue-800"
+                      }`}
+                    >
+                      {user.role}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm border-b border-gray-200">
                   {user.isNewUser ? (
@@ -333,6 +411,28 @@ export default function Users() {
                       e.key === "Enter" && handleAddUser()
                     }
                   />
+                </div>
+
+                {/* Role Selection */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role
+                  </label>
+                  <select
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {availableRoles
+                      .filter(r => {
+                        if (!isRoot() && (r.id === "root" || r.id === "admin")) return false;
+                        return true;
+                      })
+                      .map(r => (
+                        <option key={r.id} value={r.id}>{r.name || r.id}</option>
+                      ))
+                    }
+                  </select>
                 </div>
 
                 {/* Buttons */}

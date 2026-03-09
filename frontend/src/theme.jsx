@@ -392,8 +392,40 @@ const COLOR_THEMES = {
 
 const ThemeContext = createContext();
 
+// ── Helpers to persist theme preferences inside the user record ──────
+function saveThemeToUser(prefs) {
+  try {
+    const cu = localStorage.getItem("currentUser");
+    if (!cu) return;
+    const currentUser = JSON.parse(cu);
+    const users = JSON.parse(localStorage.getItem("users") || "[]");
+    const updated = users.map(u =>
+      u.id === currentUser.id ? { ...u, themePrefs: { ...(u.themePrefs || {}), ...prefs } } : u
+    );
+    localStorage.setItem("users", JSON.stringify(updated));
+    // Also patch currentUser so a page-refresh keeps them
+    const patched = { ...currentUser, themePrefs: { ...(currentUser.themePrefs || {}), ...prefs } };
+    localStorage.setItem("currentUser", JSON.stringify(patched));
+  } catch {}
+}
+
+function loadThemeFromUser() {
+  try {
+    const cu = localStorage.getItem("currentUser");
+    if (cu) {
+      const parsed = JSON.parse(cu);
+      if (parsed.themePrefs) return parsed.themePrefs;
+    }
+  } catch {}
+  return null;
+}
+
 export function ThemeProvider({ children }) {
+  // On mount: prefer the user-record prefs (cloud-saved), fall back to localStorage
   const [dark, setDark] = useState(() => {
+    const userPrefs = loadThemeFromUser();
+    if (userPrefs?.mode === "dark") return true;
+    if (userPrefs?.mode === "light") return false;
     const saved = localStorage.getItem("theme");
     if (saved === "dark") return true;
     if (saved === "light") return false;
@@ -401,9 +433,11 @@ export function ThemeProvider({ children }) {
   });
 
   const [colorTheme, setColorTheme] = useState(() => {
-    return localStorage.getItem("colorTheme") || "midnight";
+    const userPrefs = loadThemeFromUser();
+    return userPrefs?.colorTheme || localStorage.getItem("colorTheme") || "midnight";
   });
 
+  // Persist dark/light + sync to user
   useEffect(() => {
     const root = document.documentElement;
     if (dark) {
@@ -413,10 +447,14 @@ export function ThemeProvider({ children }) {
       root.classList.remove("dark");
       localStorage.setItem("theme", "light");
     }
+    saveThemeToUser({ mode: dark ? "dark" : "light" });
   }, [dark]);
 
+  // Persist colorTheme + CSS vars + sync to user
   useEffect(() => {
     localStorage.setItem("colorTheme", colorTheme);
+    saveThemeToUser({ colorTheme });
+
     // Apply CSS custom properties for theming
     const theme = COLOR_THEMES[colorTheme] || COLOR_THEMES.midnight;
     const mode = dark ? theme.dark : theme.light;
@@ -432,6 +470,26 @@ export function ThemeProvider({ children }) {
     root.style.setProperty('--theme-text-muted', mode.textMuted);
     root.style.setProperty('--theme-border', mode.border);
   }, [colorTheme, dark]);
+
+  // Re-apply saved theme when user logs in (handles cross-device persistence)
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === "currentUser" && e.newValue) {
+        try {
+          const u = JSON.parse(e.newValue);
+          if (u.themePrefs) {
+            if (u.themePrefs.mode === "dark") setDark(true);
+            else if (u.themePrefs.mode === "light") setDark(false);
+            if (u.themePrefs.colorTheme && COLOR_THEMES[u.themePrefs.colorTheme]) {
+              setColorTheme(u.themePrefs.colorTheme);
+            }
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   // Global theme/background initialization on app mount
   // Reads saved theme mode and applies background to document.documentElement
@@ -455,7 +513,6 @@ export function ThemeProvider({ children }) {
           root.style.backgroundPosition = 'center';
           root.style.backgroundAttachment = 'fixed';
           root.style.backgroundRepeat = 'no-repeat';
-          console.debug('[ThemeProvider] Applied photo background:', unsplashUrl);
         } else if (activeMode === 'gradient' && themeImage && themeImage !== 'none' && !themeImage.startsWith('unsplash_')) {
           // Default gradient URLs for built-in gradients
           const GRADIENT_MAP = {
@@ -475,13 +532,11 @@ export function ThemeProvider({ children }) {
             root.style.backgroundPosition = 'center';
             root.style.backgroundAttachment = 'fixed';
             root.style.backgroundRepeat = 'no-repeat';
-            console.debug('[ThemeProvider] Applied gradient background:', themeImage);
           }
         } else {
           // Color mode - clear backgrounds
           root.style.backgroundImage = 'none';
           root.style.backgroundColor = '';
-          console.debug('[ThemeProvider] Color mode - backgrounds cleared');
         }
       } catch (e) {
         console.warn('[ThemeProvider] Error initializing theme:', e);

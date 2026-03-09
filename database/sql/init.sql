@@ -414,6 +414,7 @@ CREATE TABLE IF NOT EXISTS tally_vouchers (
     is_invoice BOOLEAN DEFAULT FALSE,
     is_cancelled BOOLEAN DEFAULT FALSE,
     reference_number VARCHAR(100),
+    other_references VARCHAR(255),
     tally_guid VARCHAR(100),
     voucher_data TEXT,
     pending_tally_sync BOOLEAN DEFAULT FALSE,
@@ -422,8 +423,16 @@ CREATE TABLE IF NOT EXISTS tally_vouchers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(voucher_number, voucher_type)
 );
+-- Add other_references column if it doesn't exist (for existing installations)
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tally_vouchers' AND column_name = 'other_references') THEN
+        ALTER TABLE tally_vouchers ADD COLUMN other_references VARCHAR(255);
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_vouchers_date ON tally_vouchers(date);
 CREATE INDEX IF NOT EXISTS idx_vouchers_party ON tally_vouchers(party_name);
+CREATE INDEX IF NOT EXISTS idx_vouchers_other_ref ON tally_vouchers(other_references);
 
 -- Tally Groups Table
 CREATE TABLE IF NOT EXISTS tally_groups (
@@ -462,3 +471,25 @@ CREATE TABLE IF NOT EXISTS sync_queue (
     synced_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- =====================================================
+-- EMPLOYEE DEALS / SALES TRACKING TABLE
+-- Stores voucher amount + employee name (other_references) for target tracking
+-- Populated during voucher sync - tracks which employee cracked which deal
+-- =====================================================
+CREATE TABLE IF NOT EXISTS employee_deals (
+    id SERIAL PRIMARY KEY,
+    voucher_number VARCHAR(100) NOT NULL,
+    voucher_type VARCHAR(100) NOT NULL,
+    party_name VARCHAR(255),
+    amount DECIMAL(20, 2) DEFAULT 0,
+    employee_name VARCHAR(255) NOT NULL,
+    date DATE,
+    narration TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(voucher_number, voucher_type, employee_name)
+);
+CREATE INDEX IF NOT EXISTS idx_employee_deals_employee ON employee_deals(employee_name);
+CREATE INDEX IF NOT EXISTS idx_employee_deals_date ON employee_deals(date);
+CREATE INDEX IF NOT EXISTS idx_employee_deals_type ON employee_deals(voucher_type);

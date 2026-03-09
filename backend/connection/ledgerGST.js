@@ -462,6 +462,7 @@ async function parseLedgerCollectionXml(xml) {
 }
 
 // Parse balance string to number (handles "100.00 Dr" or "-100.00 Cr" formats)
+// Values from Tally XML already contain proper decimal points
 function parseBalance(balanceStr) {
   if (!balanceStr) return 0;
   
@@ -480,7 +481,7 @@ function parseBalance(balanceStr) {
     value = Math.abs(value);
   }
   
-  return value / 100; // Divide by 100 as requested
+  return value;
 }
 
 // Get GST details for a specific ledger by name

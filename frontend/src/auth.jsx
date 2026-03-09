@@ -258,17 +258,30 @@ export function AuthProvider({ children }) {
       console.error("Error checking permission:", err);
     }
     
-    // Default permissions by role
+    // Default permissions by role (page_operation format)
     const defaultPerms = {
-      admin: ['view_dashboard', 'view_vouchers', 'edit_vouchers', 'delete_vouchers', 'export_vouchers', 
-              'view_inventory', 'manage_inventory', 'view_ledgers', 'manage_ledgers', 
-              'view_reports', 'export_reports', 'view_employees', 'manage_employees',
-              'view_users', 'manage_users', 'view_settings', 'manage_settings', 'view_logs',
-              'view_rates', 'view_blacklisted_ledgers'],
-      manager: ['view_dashboard', 'view_vouchers', 'edit_vouchers', 'view_inventory', 
-                'view_ledgers', 'view_reports', 'export_reports', 'view_employees'],
-      staff: ['view_dashboard', 'view_vouchers', 'view_inventory', 'view_ledgers'],
-      user: ['view_dashboard']
+      admin: [
+        'dashboard_view','dashboard_create','dashboard_edit','dashboard_delete',
+        'vouchers_view','vouchers_create','vouchers_edit','vouchers_delete',
+        'orders_view','orders_create','orders_edit','orders_delete',
+        'ledgers_view','ledgers_create','ledgers_edit','ledgers_delete',
+        'inventory_view','inventory_create','inventory_edit','inventory_delete',
+        'employees_view','employees_create','employees_edit','employees_delete',
+        'communication_view','communication_create','communication_edit','communication_delete',
+        'reports_view','reports_create','reports_edit','reports_delete',
+        'view_rates','manage_users','manage_roles','view_logs','generate_invoice','export_data'
+      ],
+      manager: [
+        'dashboard_view','vouchers_view','vouchers_create','vouchers_edit',
+        'orders_view','orders_create','ledgers_view','inventory_view',
+        'employees_view','communication_view','communication_create',
+        'reports_view','view_rates','export_data'
+      ],
+      staff: [
+        'dashboard_view','vouchers_view','orders_view','ledgers_view',
+        'inventory_view','communication_view'
+      ],
+      user: ['dashboard_view']
     };
     
     return defaultPerms[userRole]?.includes(permissionId) || false;

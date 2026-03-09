@@ -83,7 +83,7 @@ class TallySyncService {
 
       const response = await axios.post(tallyUrl, pingXml, {
         headers: { 'Content-Type': 'text/xml' },
-        timeout: 3000
+        timeout: 8000
       });
 
       this.isConnected = response.status === 200;
@@ -488,9 +488,19 @@ class TallySyncService {
         let rawOpeningBalance = 0;
         let rawClosingBalance = 0;
         
-        // Parse opening balance
-        const openBalStr = this.extractXmlValue(content, 'OPENINGBALANCE') ||
-                           this.extractXmlValue(content, 'LEDOPENINGBALANCE');
+        // Parse opening balance - prefer TBALOPENING (trial balance opening for the period)
+        // TBALOPENING reflects the actual opening balance for the reporting period
+        // LEDOPENINGBALANCE is the ledger master's opening balance (may differ)
+        // IMPORTANT: Check tag EXISTENCE, not value truthiness, because TBALOPENING=0.00 is valid
+        // and we must NOT fall through to LEDOPENINGBALANCE when TBALOPENING is 0
+        let openBalStr = null;
+        if (this.xmlTagExists(content, 'TBALOPENING')) {
+          openBalStr = this.extractXmlValue(content, 'TBALOPENING') || '0';
+        } else if (this.xmlTagExists(content, 'OPENINGBALANCE')) {
+          openBalStr = this.extractXmlValue(content, 'OPENINGBALANCE') || '0';
+        } else if (this.xmlTagExists(content, 'LEDOPENINGBALANCE')) {
+          openBalStr = this.extractXmlValue(content, 'LEDOPENINGBALANCE') || '0';
+        }
         if (openBalStr) {
           rawOpeningBalance = this.parseRawBalance(openBalStr);
         }
@@ -570,17 +580,19 @@ class TallySyncService {
   /**
    * Parse raw balance string from Tally XML
    * Handles formats like: "-1180.00", "5000 Cr", "₹ 1,234.56 Dr", "TYPE='Amount'>-500</CLOSINGBALANCE>"
+   * Values in Tally XML already contain decimal points (e.g. -1180.00)
    */
   parseRawBalance(balStr) {
     if (!balStr) return 0;
     
     const str = String(balStr).trim();
     
-    // Remove currency symbols and commas
-    const cleanVal = str.replace(/[₹,Rs.\s]/gi, '').trim();
+    // Remove currency symbols, commas, and "Rs" text — but PRESERVE decimal points
+    // Note: Do NOT use character class with '.' as it removes the decimal separator
+    const cleanVal = str.replace(/₹/g, '').replace(/Rs\.?/gi, '').replace(/,/g, '').replace(/\s+/g, ' ').trim();
     const lowerVal = cleanVal.toLowerCase();
     
-    // Extract numeric value
+    // Extract numeric value (keep digits, decimal point, minus sign)
     const numericPart = cleanVal.replace(/[^0-9.\-]/g, '');
     let num = parseFloat(numericPart) || 0;
     
@@ -790,6 +802,15 @@ class TallySyncService {
   }
 
   /**
+   * Check if an XML tag exists in the content (regardless of its value)
+   * Returns true if the tag is present, even if empty
+   */
+  xmlTagExists(content, tagName) {
+    const regex = new RegExp(`<${tagName}[\\s>/]`, 'i');
+    return regex.test(content);
+  }
+
+  /**
    * Extract multiline value from XML content - handles elements with content that may include other XML
    */
   extractMultilineXmlValue(content, tagName) {
@@ -989,8 +1010,8 @@ class TallySyncService {
       
       try {
         await dbQuery(`
-          INSERT INTO tally_vouchers (voucher_number, voucher_type, date, party_name, amount, narration, is_invoice, is_cancelled, reference_number, voucher_data, last_synced)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          INSERT INTO tally_vouchers (voucher_number, voucher_type, date, party_name, amount, narration, is_invoice, is_cancelled, reference_number, other_references, voucher_data, last_synced)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
           ON CONFLICT (voucher_number, voucher_type) DO UPDATE SET
             date = EXCLUDED.date,
             party_name = EXCLUDED.party_name,
@@ -999,6 +1020,7 @@ class TallySyncService {
             is_invoice = EXCLUDED.is_invoice,
             is_cancelled = EXCLUDED.is_cancelled,
             reference_number = EXCLUDED.reference_number,
+            other_references = EXCLUDED.other_references,
             voucher_data = EXCLUDED.voucher_data,
             last_synced = NOW(),
             updated_at = NOW()
@@ -1012,14 +1034,108 @@ class TallySyncService {
           voucher.is_invoice,
           voucher.is_cancelled,
           voucher.reference_number || voucher.reference || '',
+          voucher.other_references || '',
           voucherDataJson
         ]);
         count++;
+        
+        // Also sync to employee_deals table if other_references is present
+        const employeeName = (voucher.other_references || '').trim();
+        if (employeeName && voucher.voucher_number && voucher.voucher_type) {
+          try {
+            await dbQuery(`
+              INSERT INTO employee_deals (voucher_number, voucher_type, party_name, amount, employee_name, date, narration)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)
+              ON CONFLICT (voucher_number, voucher_type, employee_name) DO UPDATE SET
+                party_name = EXCLUDED.party_name,
+                amount = EXCLUDED.amount,
+                date = EXCLUDED.date,
+                narration = EXCLUDED.narration,
+                updated_at = NOW()
+            `, [
+              voucher.voucher_number,
+              voucher.voucher_type,
+              voucher.party_name || voucher.party_ledger || voucher.party || '',
+              voucher.amount || voucher.totalAmount || 0,
+              employeeName,
+              voucher.date ? new Date(voucher.date) : null,
+              voucher.narration || ''
+            ]);
+          } catch (dealErr) {
+            console.warn(`Error syncing employee deal for ${voucher.voucher_number}:`, dealErr.message);
+          }
+        }
       } catch (err) {
         console.error(`Error syncing voucher ${voucher.voucher_number}:`, err.message);
       }
     }
     return count;
+  }
+
+  /**
+   * Get employee deals/targets from database
+   * Returns aggregated deal amounts per employee for a given month
+   */
+  async getEmployeeDeals(employeeNames, month, year) {
+    const targetMonth = month !== undefined ? parseInt(month) : new Date().getMonth();
+    const targetYear = year !== undefined ? parseInt(year) : new Date().getFullYear();
+    const startDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
+    const endDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const endDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+    const targets = {};
+    for (const name of employeeNames) {
+      if (!name || typeof name !== 'string') continue;
+      const safeName = name.trim();
+      if (!safeName) continue;
+
+      try {
+        const result = await dbQuery(
+          `SELECT COALESCE(SUM(ABS(amount)), 0) as total_amount,
+                  COUNT(*) as voucher_count
+           FROM employee_deals 
+           WHERE LOWER(employee_name) = LOWER($1)
+           AND date >= $2::date 
+           AND date <= $3::date
+           AND LOWER(voucher_type) IN ('sales')`,
+          [safeName, startDate, endDate]
+        );
+        targets[safeName] = {
+          achieved: parseFloat(result.rows?.[0]?.total_amount || 0),
+          voucherCount: parseInt(result.rows?.[0]?.voucher_count || 0)
+        };
+      } catch (err) {
+        console.warn(`Error getting deals for ${safeName}:`, err.message);
+        targets[safeName] = { achieved: 0, voucherCount: 0 };
+      }
+    }
+    return targets;
+  }
+
+  /**
+   * Get all employee deals with details for a given month
+   */
+  async getEmployeeDealDetails(employeeName, month, year) {
+    const targetMonth = month !== undefined ? parseInt(month) : new Date().getMonth();
+    const targetYear = year !== undefined ? parseInt(year) : new Date().getFullYear();
+    const startDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
+    const endDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const endDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+    try {
+      const result = await dbQuery(
+        `SELECT * FROM employee_deals 
+         WHERE LOWER(employee_name) = LOWER($1)
+         AND date >= $2::date 
+         AND date <= $3::date
+         ORDER BY date DESC`,
+        [employeeName.trim(), startDate, endDate]
+      );
+      return result.rows;
+    } catch (err) {
+      console.warn(`Error getting deal details for ${employeeName}:`, err.message);
+      return [];
+    }
   }
 
   /**

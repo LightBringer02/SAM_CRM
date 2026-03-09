@@ -164,6 +164,19 @@ router.use(extractUser);
 router.get('/status', async (req, res) => {
   const config = getConfig();
   
+  // On first check, load persisted sync state from database
+  if (!lastSyncResult.timestamp) {
+    try {
+      const dbResult = await dbQuery(`SELECT value FROM system_config WHERE key = 'last_sync_state'`);
+      if (dbResult.rows?.length > 0 && dbResult.rows[0].value) {
+        const persisted = JSON.parse(dbResult.rows[0].value);
+        lastSyncResult = { ...lastSyncResult, ...persisted };
+      }
+    } catch (loadErr) {
+      // DB may not be initialized yet, ignore
+    }
+  }
+
   // Check Tally connection
   let tallyConnected = false;
   if (tallySyncService) {
@@ -176,7 +189,7 @@ router.get('/status', async (req, res) => {
         const pingXml = `<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Function</TYPE><ID>$$CurrentCompany</ID></HEADER><BODY></BODY></ENVELOPE>`;
         const response = await axios.post(tallyUrl, pingXml, {
           headers: { 'Content-Type': 'text/xml' },
-          timeout: 3000
+          timeout: 8000
         });
         tallyConnected = response.status === 200;
       }
@@ -680,7 +693,7 @@ router.post('/navbar-sync', async (req, res) => {
           const pingXml = `<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Function</TYPE><ID>$$CurrentCompany</ID></HEADER><BODY></BODY></ENVELOPE>`;
           const response = await axios.post(tallyUrl, pingXml, {
             headers: { 'Content-Type': 'text/xml' },
-            timeout: 3000
+            timeout: 8000
           });
           tallyConnected = response.status === 200;
         }
@@ -690,13 +703,24 @@ router.post('/navbar-sync', async (req, res) => {
       syncMessage = tallyConnected ? 'Tally connected' : 'Tally offline';
     }
     
-    // Update last sync state
+    // Update last sync state (in-memory + database for cloud persistence)
     lastSyncResult = {
       ...lastSyncResult,
       tallyConnected,
       dataSynced,
       timestamp: new Date().toISOString()
     };
+
+    // Persist sync state to database for cloud restarts
+    try {
+      await dbQuery(
+        `INSERT INTO system_config (key, value, updated_at) VALUES ('last_sync_state', $1, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [JSON.stringify(lastSyncResult)]
+      );
+    } catch (persistErr) {
+      console.warn('Could not persist sync state:', persistErr.message);
+    }
     
     res.json({
       success: true,
@@ -936,6 +960,129 @@ router.post('/test-database', async (req, res) => {
         : err.message,
       canCreate: err.code === '3D000'
     });
+  }
+});
+
+/**
+ * POST /api/sync/employee-targets
+ * Calculate employee target achievements from vouchers (other_references field)
+ * Scans tally_vouchers for matching employee names in other_references
+ * Returns { [employeeName]: { achieved: number, voucherCount: number } }
+ */
+router.post('/employee-targets', async (req, res) => {
+  try {
+    const { employeeNames, month, year } = req.body;
+    if (!employeeNames || !Array.isArray(employeeNames) || employeeNames.length === 0) {
+      return res.json({ success: true, targets: {} });
+    }
+
+    await initializeDatabaseIfNeeded();
+
+    // Build date range for the month
+    const targetMonth = month !== undefined ? parseInt(month) : new Date().getMonth();
+    const targetYear = year !== undefined ? parseInt(year) : new Date().getFullYear();
+    const startDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
+    const endDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const endDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+    const targets = {};
+
+    // Query vouchers from database - check other_references for employee names
+    for (const name of employeeNames) {
+      if (!name || typeof name !== 'string') continue;
+      const safeName = name.trim();
+      if (!safeName) continue;
+
+      try {
+        // First try the dedicated employee_deals table (populated during voucher sync)
+        let result;
+        try {
+          result = await dbQuery(
+            `SELECT COALESCE(SUM(ABS(amount)), 0) as total_amount,
+                    COUNT(*) as voucher_count
+             FROM employee_deals 
+             WHERE LOWER(employee_name) = LOWER($1)
+             AND date >= $2::date 
+             AND date <= $3::date
+             AND LOWER(voucher_type) IN ('sales')`,
+            [safeName, startDate, endDate]
+          );
+        } catch (dealTableErr) {
+          // Fallback to tally_vouchers if employee_deals table doesn't exist yet
+          console.warn('employee_deals table not available, falling back to tally_vouchers:', dealTableErr.message);
+          result = await dbQuery(
+            `SELECT COALESCE(SUM(ABS(CAST(COALESCE(amount, '0') AS NUMERIC))), 0) as total_amount,
+                    COUNT(*) as voucher_count
+             FROM tally_vouchers 
+             WHERE (
+               LOWER(COALESCE(other_references, '')) LIKE LOWER($1)
+               OR LOWER(COALESCE(narration, '')) LIKE LOWER($2)
+               OR LOWER(COALESCE(voucher_data, '')) LIKE LOWER($3)
+             )
+             AND date >= $4::date 
+             AND date <= $5::date
+             AND LOWER(voucher_type) IN ('sales')`,
+            [`%${safeName}%`, `%${safeName}%`, `%"other_references":"${safeName}%`, startDate, endDate]
+          );
+        }
+
+        targets[safeName] = {
+          achieved: parseFloat(result.rows?.[0]?.total_amount || 0),
+          voucherCount: parseInt(result.rows?.[0]?.voucher_count || 0)
+        };
+      } catch (queryErr) {
+        console.warn(`Target query failed for ${safeName}:`, queryErr.message);
+        targets[safeName] = { achieved: 0, voucherCount: 0 };
+      }
+    }
+
+    res.json({ success: true, targets });
+  } catch (err) {
+    console.error('Employee targets error:', err.message);
+    res.json({ success: false, error: err.message, targets: {} });
+  }
+});
+
+/**
+ * POST /api/sync/employee-deal-details
+ * Get detailed deal list for a specific employee in a given month
+ * Returns array of {voucher_number, voucher_type, party_name, amount, date, narration}
+ */
+router.post('/employee-deal-details', async (req, res) => {
+  try {
+    const { employeeName, month, year } = req.body;
+    if (!employeeName || typeof employeeName !== 'string') {
+      return res.json({ success: true, deals: [] });
+    }
+
+    await initializeDatabaseIfNeeded();
+
+    const targetMonth = month !== undefined ? parseInt(month) : new Date().getMonth();
+    const targetYear = year !== undefined ? parseInt(year) : new Date().getFullYear();
+    const startDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
+    const endDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const endDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+    let deals = [];
+    try {
+      const result = await dbQuery(
+        `SELECT voucher_number, voucher_type, party_name, amount, date, narration, employee_name
+         FROM employee_deals 
+         WHERE LOWER(employee_name) = LOWER($1)
+         AND date >= $2::date 
+         AND date <= $3::date
+         ORDER BY date DESC`,
+        [employeeName.trim(), startDate, endDate]
+      );
+      deals = result.rows || [];
+    } catch (tableErr) {
+      console.warn('employee_deals table not available:', tableErr.message);
+    }
+
+    res.json({ success: true, deals });
+  } catch (err) {
+    console.error('Employee deal details error:', err.message);
+    res.json({ success: false, error: err.message, deals: [] });
   }
 });
 

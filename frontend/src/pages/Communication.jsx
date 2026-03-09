@@ -411,7 +411,7 @@ export default function Communication() {
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
+          <div className="glass-text">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Communication</h1>
             <p className="text-sm text-gray-600 dark:text-gray-400">Send messages via WhatsApp or Email</p>
           </div>

@@ -186,7 +186,7 @@ export default function QueueManagement() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <ListTodo className="w-8 h-8 text-purple-600" />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Queue Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white glass-text">Queue Management</h1>
         </div>
         <button
           onClick={() => { fetchStatus(); fetchJobs(); }}

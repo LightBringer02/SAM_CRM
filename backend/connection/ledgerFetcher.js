@@ -150,12 +150,14 @@ function getTextValue(val) {
  * For display purposes, we invert this:
  * - Sundry Debtors: negative in Tally means "they owe us" (should show as positive/receivable)
  * - Sundry Creditors: positive in Tally means "we owe them" (should show as positive/payable)
+ * 
+ * Values from xml2js already contain proper decimal points (e.g. -1180.00)
  */
 function parseBalance(val, parent) {
   const text = getTextValue(val);
   if (!text) return 0;
   
-  // Extract numeric value
+  // Extract numeric value (keep digits, decimal point, minus sign)
   const numericText = text.replace(/[^0-9.\-]/g, '');
   let value = parseFloat(numericText) || 0;
   
@@ -276,8 +278,10 @@ async function parseLedgerXml(xml) {
       const parent = getTextValue(item.PARENT) || 'Primary';
       
       // Parse balances
+      // TBALOPENING = Trial Balance Opening (correct opening balance for display)
+      // CLOSINGBALANCE = Correct closing balance
       const rawClosingBalance = parseBalance(item.CLOSINGBALANCE, parent);
-      const rawOpeningBalance = parseBalance(item.LEDOPENINGBALANCE || item.OPENINGBALANCE, parent);
+      const rawOpeningBalance = parseBalance(item.TBALOPENING, parent);
       const onAccountValue = parseBalance(item.ONACCOUNTVALUE, parent);
       
       // Get display balances (correctly signed for the ledger type)

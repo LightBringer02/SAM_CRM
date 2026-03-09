@@ -136,7 +136,7 @@ function VendorSummaryCards() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Vendors</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white glass-text">Vendors</h1>
         <button 
           onClick={fetchSummary}
           className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/40 transition"
@@ -293,7 +293,7 @@ function LedgerListView({ groupKey }) {
       )}
 
       {/* Ledgers Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />

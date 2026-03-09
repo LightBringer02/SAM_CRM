@@ -9,7 +9,9 @@ import {
   CheckCircle, 
   AlertCircle,
   ArrowLeft,
-  Shield
+  Shield,
+  FileText,
+  Truck
 } from "lucide-react";
 
 // WhatsApp Icon SVG
@@ -48,21 +50,41 @@ export default function ApiConfiguration() {
         smtpPassword: '',
         fromEmail: '',
         fromName: ''
+      },
+      ewayEinvoice: {
+        enabled: false,
+        apiEndpoint: '',
+        username: '',
+        password: '',
+        gstin: '',
+        clientId: '',
+        clientSecret: '',
+        ewayEnabled: true,
+        einvoiceEnabled: true
       }
     };
   });
   const [apiConfigLoading, setApiConfigLoading] = useState(false);
   const [apiConfigSuccess, setApiConfigSuccess] = useState('');
 
+  // App Settings State (stored separately)
+  const [appSettings, setAppSettings] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('crm_app_settings') || '{}');
+    } catch { return {}; }
+  });
+
   // Save API config to localStorage
   const handleSaveApiConfig = () => {
     setApiConfigLoading(true);
     try {
       localStorage.setItem('communication_api_config', JSON.stringify(apiConfig));
-      setApiConfigSuccess('API configuration saved successfully!');
+      // Save app settings too
+      localStorage.setItem('crm_app_settings', JSON.stringify(appSettings));
+      setApiConfigSuccess('Configuration saved successfully!');
       setTimeout(() => setApiConfigSuccess(''), 3000);
     } catch (err) {
-      console.error('Failed to save API config:', err);
+      console.error('Failed to save config:', err);
     }
     setApiConfigLoading(false);
   };
@@ -292,6 +314,183 @@ export default function ApiConfiguration() {
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   For Gmail, use an <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">App Password</a> instead of your regular password
                 </p>
+              </div>
+            )}
+          </div>
+
+          {/* E-Way Bill & E-Invoice API Configuration */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Truck className="w-5 h-5 text-orange-500" />
+                E-Way Bill & E-Invoice API
+              </h3>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={apiConfig.ewayEinvoice?.enabled || false}
+                  onChange={(e) => setApiConfig(prev => ({
+                    ...prev,
+                    ewayEinvoice: { ...prev.ewayEinvoice, enabled: e.target.checked }
+                  }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-500"></div>
+              </label>
+            </div>
+            
+            {apiConfig.ewayEinvoice?.enabled && (
+              <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                {/* Feature Toggles */}
+                <div className="flex gap-6 pb-4 border-b border-gray-200 dark:border-gray-600">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={apiConfig.ewayEinvoice?.ewayEnabled ?? true}
+                      onChange={(e) => setApiConfig(prev => ({
+                        ...prev,
+                        ewayEinvoice: { ...prev.ewayEinvoice, ewayEnabled: e.target.checked }
+                      }))}
+                      className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">E-Way Bill</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={apiConfig.ewayEinvoice?.einvoiceEnabled ?? true}
+                      onChange={(e) => setApiConfig(prev => ({
+                        ...prev,
+                        ewayEinvoice: { ...prev.ewayEinvoice, einvoiceEnabled: e.target.checked }
+                      }))}
+                      className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">E-Invoice</span>
+                  </label>
+                </div>
+
+                {/* E-Way Bill Threshold Amount */}
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    E-Way Bill Threshold Amount (₹)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 font-medium">₹</span>
+                      <input
+                        type="number"
+                        value={appSettings.ewayBillThreshold || 50000}
+                        onChange={(e) => setAppSettings(prev => ({
+                          ...prev,
+                          ewayBillThreshold: Number(e.target.value) || 50000
+                        }))}
+                        className="w-full pl-8 pr-4 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                        placeholder="50000"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                    E-Way Bill button will only appear for sales vouchers with amount exceeding this threshold. Default: ₹50,000 (as per GST rules).
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API Endpoint URL</label>
+                  <input
+                    type="text"
+                    value={apiConfig.ewayEinvoice?.apiEndpoint || ''}
+                    onChange={(e) => setApiConfig(prev => ({
+                      ...prev,
+                      ewayEinvoice: { ...prev.ewayEinvoice, apiEndpoint: e.target.value }
+                    }))}
+                    className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                    placeholder="https://api.gst.gov.in or third-party provider URL"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                    <input
+                      type="text"
+                      value={apiConfig.ewayEinvoice?.username || ''}
+                      onChange={(e) => setApiConfig(prev => ({
+                        ...prev,
+                        ewayEinvoice: { ...prev.ewayEinvoice, username: e.target.value }
+                      }))}
+                      className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                      placeholder="API Username"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                    <input
+                      type="password"
+                      value={apiConfig.ewayEinvoice?.password || ''}
+                      onChange={(e) => setApiConfig(prev => ({
+                        ...prev,
+                        ewayEinvoice: { ...prev.ewayEinvoice, password: e.target.value }
+                      }))}
+                      className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                      placeholder="API Password"
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">GSTIN</label>
+                  <input
+                    type="text"
+                    value={apiConfig.ewayEinvoice?.gstin || ''}
+                    onChange={(e) => setApiConfig(prev => ({
+                      ...prev,
+                      ewayEinvoice: { ...prev.ewayEinvoice, gstin: e.target.value.toUpperCase() }
+                    }))}
+                    className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 uppercase"
+                    placeholder="15-digit GSTIN"
+                    maxLength={15}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client ID</label>
+                    <input
+                      type="text"
+                      value={apiConfig.ewayEinvoice?.clientId || ''}
+                      onChange={(e) => setApiConfig(prev => ({
+                        ...prev,
+                        ewayEinvoice: { ...prev.ewayEinvoice, clientId: e.target.value }
+                      }))}
+                      className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                      placeholder="OAuth Client ID"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client Secret</label>
+                    <input
+                      type="password"
+                      value={apiConfig.ewayEinvoice?.clientSecret || ''}
+                      onChange={(e) => setApiConfig(prev => ({
+                        ...prev,
+                        ewayEinvoice: { ...prev.ewayEinvoice, clientSecret: e.target.value }
+                      }))}
+                      className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                      placeholder="OAuth Client Secret"
+                    />
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                  <p className="text-xs text-orange-700 dark:text-orange-300 flex items-start gap-2">
+                    <FileText className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>
+                      You can use official GST/NIC APIs or third-party providers like ClearTax, Tally, or Zoho Invoice for E-Way Bill and E-Invoice generation. 
+                      Contact your GSP (GST Suvidha Provider) for API credentials.
+                    </span>
+                  </p>
+                </div>
               </div>
             )}
           </div>

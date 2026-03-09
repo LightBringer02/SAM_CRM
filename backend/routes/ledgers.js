@@ -430,6 +430,12 @@ router.get('/with-balances/:group', async (req, res) => {
     if (mode === 'LIVE' && tallySyncService) {
       try {
         ledgers = await tallySyncService.getLedgersWithBalances(groupNames);
+        // Auto-sync fetched ledgers to database for offline fallback
+        if (ledgers.length > 0) {
+          tallySyncService.syncLedgersToDb(ledgers).catch(err => 
+            console.warn('Background ledger sync failed:', err.message)
+          );
+        }
       } catch (tallyErr) {
         console.warn('Tally ledgers with balances fetch failed:', tallyErr.message);
       }

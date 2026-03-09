@@ -135,11 +135,11 @@ export default function Logs() {
     <div className="p-6 min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div>
+        <div className="glass-text">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">System Logs</h1>
           <p className="text-gray-500 dark:text-gray-400">View activity logs and system events</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={loadLogs} className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
@@ -155,7 +155,7 @@ export default function Logs() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         {Object.entries(LOG_TYPES).map(([type, config]) => {
           const count = logs.filter(l => l.type === type).length;
           const Icon = config.icon;

@@ -16,11 +16,9 @@ function saveReminders(reminders) {
 }
 
 const CalendarDropdown = React.memo(function CalendarDropdown({ open, onClose, anchorRef }) {
-  if (process.env.NODE_ENV === 'development') console.log('CalendarDropdown render', open);
   const [selectedDate, setSelectedDate] = useState(new Date());
   useEffect(() => {
-    if (process.env.NODE_ENV === 'development') console.log('CalendarDropdown mounted');
-    return () => { if (process.env.NODE_ENV === 'development') console.log('CalendarDropdown unmounted'); };
+    return () => {};
   }, []);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [reminders, setReminders] = useState(getReminders());

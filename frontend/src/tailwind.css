@@ -28,32 +28,45 @@
 /* Override bg-white and dark:bg-gray-* to use theme colors */
 /* This makes ALL existing pages instantly theme-aware */
 @layer base {
-  /* Page backgrounds - use theme base */
+  /* ── Page backgrounds ── */
   .bg-white:not(.invoice-print-area):not(.print-white):not([data-keep-white]) {
     background-color: var(--theme-surface-alt);
   }
-  
-  /* Dark mode equivalents */
   .dark .dark\:bg-gray-900:not(.invoice-print-area):not(.print-white):not([data-keep-white]),
   .dark .dark\:bg-gray-800:not(.invoice-print-area):not(.print-white):not([data-keep-white]) {
     background-color: var(--theme-surface-alt);
   }
-  
-  /* Border overrides */
-  .dark .dark\:border-gray-700,
-  .dark .dark\:border-gray-600 {
-    border-color: var(--theme-border);
-  }
-  
-  /* Text overrides in dark mode for themed pages */
-  .dark .dark\:text-gray-100,
-  .dark .dark\:text-white {
-    color: var(--theme-text);
-  }
-  
-  .dark .dark\:text-gray-400,
-  .dark .dark\:text-gray-500 {
+
+  /* ── Surface backgrounds ── */
+  .bg-gray-50, .bg-gray-100 { background-color: var(--theme-surface); }
+  .dark .dark\:bg-gray-700, .dark .dark\:bg-gray-600 { background-color: var(--theme-surface); }
+
+  /* ── Border overrides ── */
+  .border-gray-200, .border-gray-300 { border-color: var(--theme-border); }
+  .dark .dark\:border-gray-700, .dark .dark\:border-gray-600 { border-color: var(--theme-border); }
+
+  /* ── Text overrides (light mode) ── */
+  .text-gray-900, .text-gray-800, .text-gray-700 { color: var(--theme-text); }
+  .text-gray-600, .text-gray-500, .text-gray-400 { color: var(--theme-text-muted); }
+
+  /* ── Text overrides (dark mode) ── */
+  .dark .dark\:text-gray-100, .dark .dark\:text-gray-200,
+  .dark .dark\:text-white { color: var(--theme-text); }
+  .dark .dark\:text-gray-300, .dark .dark\:text-gray-400,
+  .dark .dark\:text-gray-500 { color: var(--theme-text-muted); }
+
+  /* ── Ring / focus overrides ── */
+  .ring-gray-300, .ring-gray-200 { --tw-ring-color: var(--theme-border); }
+  .dark .dark\:ring-gray-600, .dark .dark\:ring-gray-700 { --tw-ring-color: var(--theme-border); }
+
+  /* ── Divide overrides ── */
+  .divide-gray-200 > :not(:last-child) { border-color: var(--theme-border); }
+  .dark .dark\:divide-gray-700 > :not(:last-child) { border-color: var(--theme-border); }
+
+  /* ── Placeholder overrides ── */
+  .placeholder-gray-400::placeholder, .placeholder-gray-500::placeholder {
     color: var(--theme-text-muted);
+    opacity: 0.6;
   }
 }
 
@@ -65,5 +78,67 @@
 
   .animate-fade-in {
     animation: fade-in 150ms ease-out;
+  }
+}
+
+/* ── Glass Text Container ── */
+/* Small translucent container behind text for readability over background images */
+.glass-text {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.dark .glass-text {
+  background: rgba(15, 23, 42, 0.6);
+}
+/* When glass-text is on a block wrapper (div), allow full width */
+div.glass-text {
+  display: block;
+  width: fit-content;
+}
+
+/* ── Global Responsive Fixes ── */
+/* Prevent text overflow in cards and containers */
+@layer base {
+  /* Cards should clip overflow */
+  .rounded-xl, .rounded-2xl, .rounded-lg {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+
+  /* Ensure inputs don't overflow on mobile */
+  input, select, textarea {
+    max-width: 100%;
+  }
+
+  /* Fix tables/grids on mobile */
+  @media (max-width: 767px) {
+    .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    /* Ensure page headers don't overflow on mobile */
+    h1 { font-size: clamp(1.25rem, 4vw, 1.875rem); }
+    h2 { font-size: clamp(1rem, 3.5vw, 1.5rem); }
+
+    /* Fix padding on mobile for cards */
+    .p-6:not(.modal-content) {
+      padding: 1rem;
+    }
+    .px-6:not(.modal-content) {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+
+    /* Prevent absolute right pane from covering content on mobile */
+    .fixed.top-16.right-2 {
+      display: none !important;
+    }
+  }
+
+  /* Tablet fixes */
+  @media (min-width: 768px) and (max-width: 1023px) {
+    h1 { font-size: clamp(1.5rem, 3vw, 2rem); }
   }
 }

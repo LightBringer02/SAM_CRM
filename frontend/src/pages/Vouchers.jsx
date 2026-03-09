@@ -73,30 +73,35 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { isFeatureEnabled } from "./Features";
 
 // Print styles - hide everything except invoice content when printing
 const printStyles = `
 @media print {
+  /* Reset everything */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
   /* Hide the entire page by default */
   html, body {
     margin: 0 !important;
     padding: 0 !important;
+    width: 210mm !important;
+    height: auto !important;
+    overflow: visible !important;
   }
   
   /* Hide sidebar, navbar, and all page content */
-  body > * {
+  body > *:not(.invoice-print-wrapper) {
+    display: none !important;
     visibility: hidden !important;
   }
   
-  /* Hide the main layout wrapper */
-  .bg-white.dark\\:bg-gray-900,
-  .p-6,
-  [class*="sidebar"],
-  [class*="navbar"],
-  nav,
-  header,
-  aside {
-    visibility: hidden !important;
+  /* Hide the main layout wrapper elements */
+  nav, header, aside, [class*="sidebar"], [class*="Sidebar"], [class*="navbar"], [class*="Navbar"] {
+    display: none !important;
   }
   
   /* Show only the invoice print area */
@@ -107,25 +112,25 @@ const printStyles = `
   
   /* Position the invoice at top-left */
   .invoice-print-area {
-    position: fixed !important;
+    position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    width: 210mm !important;
-    max-width: 100% !important;
-    padding: 8mm !important;
+    width: 190mm !important;
+    max-width: 190mm !important;
+    padding: 5mm !important;
     margin: 0 !important;
     background: white !important;
     box-shadow: none !important;
-    border: none !important;
     z-index: 99999 !important;
     overflow: visible !important;
     max-height: none !important;
+    font-size: 10pt !important;
   }
   
   /* Hide modal overlay and buttons */
   .print-hide,
-  .fixed.inset-0.z-50::before,
-  button {
+  button,
+  .fixed.inset-0.z-50.bg-black {
     display: none !important;
     visibility: hidden !important;
   }
@@ -141,12 +146,13 @@ const printStyles = `
   /* Page setup */
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 10mm;
   }
   
   /* Ensure proper page breaks */
   .invoice-print-area table {
     page-break-inside: auto;
+    width: 100% !important;
   }
   
   .invoice-print-area tr {
@@ -159,16 +165,90 @@ const printStyles = `
   .invoice-print-area * {
     color: black !important;
     background-color: white !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
   
-  /* Make borders visible */
-  .invoice-print-area table,
-  .invoice-print-area th,
-  .invoice-print-area td,
-  .invoice-print-area .border {
+  /* Make all borders visible - comprehensive rules */
+  .invoice-print-area .border,
+  .invoice-print-area [class*="border-"] {
     border-color: #333 !important;
+    border-style: solid !important;
+    border-width: 1px !important;
+  }
+  
+  .invoice-print-area .border-t-0 { border-top-width: 0 !important; }
+  .invoice-print-area .border-b-0 { border-bottom-width: 0 !important; }
+  .invoice-print-area .border-l-0 { border-left-width: 0 !important; }
+  .invoice-print-area .border-r { border-right-width: 1px !important; }
+
+  .invoice-print-area table {
+    border-collapse: collapse !important;
+    border: 1px solid #333 !important;
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+
+  .invoice-print-area th,
+  .invoice-print-area td {
+    border: 1px solid #333 !important;
+    padding: 4px 6px !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    font-size: 9pt !important;
+  }
+  
+  /* Invoice details table - allow auto sizing */
+  .invoice-print-area table.text-xs {
+    table-layout: auto !important;
+    width: auto !important;
+  }
+  
+  .invoice-print-area table.text-xs td {
+    white-space: nowrap !important;
+    padding: 3px 6px !important;
+    font-size: 8pt !important;
+  }
+
+  .invoice-print-area thead tr {
+    background-color: #f5f5f5 !important;
+  }
+  
+  .invoice-print-area thead th {
+    font-weight: bold !important;
+  }
+  
+  /* Fix flexbox layouts for print */
+  .invoice-print-area .flex {
+    display: flex !important;
+  }
+  
+  .invoice-print-area .flex-nowrap {
+    flex-wrap: nowrap !important;
+  }
+  
+  /* Ensure header section prints correctly */
+  .invoice-print-area h1,
+  .invoice-print-area h2 {
+    font-size: 14pt !important;
+    margin-bottom: 8px !important;
+  }
+  
+  /* Company info section */
+  .invoice-print-area .text-xs {
+    font-size: 8pt !important;
+  }
+  
+  .invoice-print-area .text-sm {
+    font-size: 9pt !important;
+  }
+  
+  /* Remove dark mode classes for print */
+  .invoice-print-area .dark\\:bg-gray-900,
+  .invoice-print-area .dark\\:bg-gray-800,
+  .invoice-print-area .dark\\:text-white,
+  .invoice-print-area .dark\\:text-gray-100 {
+    background-color: white !important;
+    color: black !important;
   }
 }
 `;
@@ -218,6 +298,239 @@ function numberToWords(num) {
   }
   result += " Only";
   return result;
+}
+
+// Professional Print Function - Opens a new window with properly formatted invoice
+function printProfessionalInvoice(voucher, company, items, totals) {
+  const printWindow = window.open('', '_blank', 'width=800,height=900');
+  if (!printWindow) {
+    alert('Please allow popups for this site to print invoices');
+    return;
+  }
+  
+  const v = voucher;
+  const voucherNo = v.voucher_number || v.number || v.invoice_no || v.vch_no || '';
+  const invoiceDate = (v.date || v.voucher_date) ? (() => {
+    try {
+      const d = new Date(v.date || v.voucher_date);
+      if (isNaN(d.getTime())) return String(v.date || v.voucher_date).slice(0, 10);
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch { return String(v.date || v.voucher_date).slice(0, 10); }
+  })() : '';
+  const buyerName = v.party_name || v.buyer_name || v.ledger_name || '';
+  const buyerAddress = v.party_address || v.buyer_address || v.address || '';
+  const buyerGstin = (v.party_gstin || v.buyer_gstin || v.gstin || '').toUpperCase();
+  const buyerState = v.party_state || v.buyer_state || v.state || '';
+  const buyerStateCode = v.party_state_code || v.buyer_state_code || '';
+  const placeOfSupply = v.place_of_supply || buyerState || '';
+  const consigneeName = v.consignee_name || buyerName;
+  const consigneeAddress = v.consignee_address || buyerAddress;
+  const consigneeGstin = v.consignee_gstin || buyerGstin;
+  const consigneeState = v.consignee_state || buyerState;
+  const consigneeStateCode = v.consignee_state_code || buyerStateCode;
+  
+  // Build items rows
+  let itemsHtml = '';
+  items.forEach((item, idx) => {
+    const hsnSac = item.hsn_sac || item.hsn_code || item.sac_code || item.hsn || '';
+    const qty = item.billed_qty || item.quantity || item.qty || '';
+    const unit = item.unit || item.uom || item.per || '';
+    const rate = parseFloat(item.rate || 0).toFixed(2);
+    const amount = parseFloat(item.amount || item.taxable_value || 0).toFixed(2);
+    // GST rates - check all possible field names
+    const cgstRate = item.cgstPercent || item.CGSTPERCENT || item.cgst_rate || item.cgst_percent || (item.gst?.cgst) || 0;
+    const sgstRate = item.sgstPercent || item.SGSTPERCENT || item.sgst_rate || item.sgst_percent || (item.gst?.sgst) || 0;
+    const igstRate = item.igstPercent || item.IGSTPERCENT || item.igst_rate || item.igst_percent || (item.gst?.igst) || 0;
+    // Display format: CGST/SGST/IGST% (matching app display)
+    const gstDisplay = `${cgstRate}/${sgstRate}/${igstRate}%`;
+    
+    itemsHtml += `
+      <tr>
+        <td style="border: 1px solid #333; padding: 6px; text-align: center;">${idx + 1}</td>
+        <td style="border: 1px solid #333; padding: 6px;">${item.stock_item_name || item.name || item.description || ''}</td>
+        <td style="border: 1px solid #333; padding: 6px; text-align: center;">${hsnSac}</td>
+        <td style="border: 1px solid #333; padding: 6px; text-align: center;">${qty}</td>
+        <td style="border: 1px solid #333; padding: 6px; text-align: center;">${unit}</td>
+        <td style="border: 1px solid #333; padding: 6px; text-align: right;">₹${rate}</td>
+        <td style="border: 1px solid #333; padding: 6px; text-align: right;">₹${amount}</td>
+        <td style="border: 1px solid #333; padding: 6px; text-align: center;">${gstDisplay}</td>
+      </tr>
+    `;
+  });
+  
+  // Calculate totals
+  const subtotal = parseFloat(totals.subtotal || 0).toFixed(2);
+  const cgst = parseFloat(totals.cgst || 0).toFixed(2);
+  const sgst = parseFloat(totals.sgst || 0).toFixed(2);
+  const igst = parseFloat(totals.igst || 0).toFixed(2);
+  const grandTotal = parseFloat(totals.grandTotal || v.amount || 0).toFixed(2);
+  const amountInWords = numberToWords(parseFloat(grandTotal));
+  
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tax Invoice - ${voucherNo}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: #fff; }
+    .invoice { width: 210mm; max-width: 100%; padding: 10mm; margin: 0 auto; }
+    .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 10px; }
+    .header h1 { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+    .company-section { display: flex; border: 1px solid #333; margin-bottom: 0; }
+    .company-details { flex: 1; padding: 10px; border-right: 1px solid #333; }
+    .invoice-details { width: auto; }
+    .invoice-details table { border-collapse: collapse; }
+    .invoice-details td { border: 1px solid #333; padding: 5px 8px; font-size: 10px; }
+    .invoice-details .label { font-weight: bold; background: #f5f5f5; }
+    .party-table { width: 100%; border-collapse: collapse; border: 1px solid #333; border-top: 0; }
+    .party-table td { border: 1px solid #333; padding: 10px; font-size: 10px; vertical-align: top; }
+    .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .items-table th, .items-table td { border: 1px solid #333; padding: 6px; font-size: 10px; }
+    .items-table th { background: #f5f5f5; font-weight: bold; }
+    .totals-section { display: flex; border: 1px solid #333; border-top: 0; }
+    .amount-words { flex: 1; padding: 10px; border-right: 1px solid #333; }
+    .totals-table { width: 40%; }
+    .totals-table td { border: 1px solid #333; padding: 5px 10px; text-align: right; }
+    .totals-table .label { text-align: left; font-weight: bold; background: #f5f5f5; }
+    .bank-section { display: flex; border: 1px solid #333; border-top: 0; margin-bottom: 10px; }
+    .bank-details { flex: 1; padding: 10px; border-right: 1px solid #333; }
+    .signature { width: 200px; padding: 10px; text-align: center; }
+    .footer { text-align: center; font-size: 9px; color: #666; margin-top: 10px; }
+    @media print {
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      body { margin: 0 !important; padding: 0 !important; }
+      .invoice { width: 100%; padding: 5mm; margin: 0; }
+      @page { 
+        size: A4 portrait; 
+        margin: 0;
+      }
+      /* Hide browser chrome */
+      html { margin: 0 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice">
+    <div class="header">
+      <h1>TAX INVOICE</h1>
+    </div>
+    
+    <div class="company-section">
+      <div class="company-details">
+        <p style="font-weight: bold; font-size: 14px; margin-bottom: 5px;">${company?.name || 'Company Name'}</p>
+        <p style="font-size: 10px; margin-bottom: 3px;">${company?.address || ''}</p>
+        <p style="font-size: 10px;"><strong>GSTIN/UIN:</strong> ${company?.gstin || '-'}</p>
+        <p style="font-size: 10px;"><strong>State:</strong> ${company?.state || '-'}${company?.state_code ? ', Code: ' + company.state_code : ''}</p>
+        ${company?.phone ? `<p style="font-size: 10px;"><strong>Contact:</strong> ${company.phone}</p>` : ''}
+        ${company?.email ? `<p style="font-size: 10px;"><strong>Email:</strong> ${company.email}</p>` : ''}
+      </div>
+      <div class="invoice-details">
+        <table>
+          <tr><td class="label">Invoice No.</td><td>${voucherNo}</td><td class="label">Dated</td><td>${invoiceDate}</td></tr>
+          <tr><td class="label">Delivery Note</td><td>${v.delivery_note || ''}</td><td class="label">Mode/Terms</td><td>${v.mode_of_payment || v.pay_type || 'CASH'}</td></tr>
+          <tr><td class="label">Reference No.</td><td>${v.reference_no || v.reference || ''}</td><td class="label">Other Ref.</td><td>${v.other_references || ''}</td></tr>
+          <tr><td class="label">Buyer's Order</td><td>${v.buyers_order_no || ''}</td><td class="label">Dated</td><td>${v.buyers_order_date || ''}</td></tr>
+          <tr><td class="label">Dispatch Doc</td><td>${v.dispatch_doc_no || ''}</td><td class="label">Del. Note Date</td><td>${v.delivery_note_date || ''}</td></tr>
+          <tr><td class="label">Dispatched Via</td><td>${v.dispatched_through || ''}</td><td class="label">Destination</td><td>${v.destination || ''}</td></tr>
+        </table>
+      </div>
+    </div>
+    
+    <!-- 2x2 Party Table: Consignee + Buyer on left, Terms of Delivery merged on right -->
+    <table class="party-table">
+      <tr>
+        <!-- A1: Consignee (Ship to) -->
+        <td style="width: 50%; border-bottom: 1px solid #333;">
+          <p style="font-weight: bold; font-size: 10px; margin-bottom: 5px;">Consignee (Ship to)</p>
+          <p style="font-weight: bold; font-size: 12px;">${consigneeName}</p>
+          <p style="font-size: 10px;">${consigneeAddress}</p>
+          <p style="font-size: 10px;"><strong>GSTIN/UIN:</strong> ${consigneeGstin || 'Unregistered'}</p>
+          <p style="font-size: 10px;"><strong>State:</strong> ${consigneeState}${consigneeStateCode ? ', Code: ' + consigneeStateCode : ''}</p>
+        </td>
+        <!-- B1+B2: Terms of Delivery (merged) -->
+        <td style="width: 50%;" rowspan="2">
+          <p style="font-weight: bold; font-size: 10px; margin-bottom: 5px;">Terms of Delivery</p>
+          <p style="font-size: 10px;">${v.terms_of_delivery || '-'}</p>
+          ${v.vehicle_number ? `<p style="font-size: 10px; margin-top: 5px;"><strong>Vehicle No:</strong> ${v.vehicle_number}</p>` : ''}
+          ${v.eway_bill_no ? `<p style="font-size: 10px;"><strong>E-Way Bill:</strong> ${v.eway_bill_no}</p>` : ''}
+          ${(v.einvoice_no || v.irn) ? `<p style="font-size: 10px;"><strong>E-Invoice (IRN):</strong> ${v.einvoice_no || v.irn}</p>` : ''}
+          ${v.dispatched_through ? `<p style="font-size: 10px; margin-top: 5px;"><strong>Dispatched Via:</strong> ${v.dispatched_through}</p>` : ''}
+          ${v.destination ? `<p style="font-size: 10px;"><strong>Destination:</strong> ${v.destination}</p>` : ''}
+        </td>
+      </tr>
+      <tr>
+        <!-- A2: Buyer (Bill to) -->
+        <td style="width: 50%;">
+          <p style="font-weight: bold; font-size: 10px; margin-bottom: 5px;">Buyer (Bill to)</p>
+          <p style="font-weight: bold; font-size: 12px;">${buyerName}</p>
+          <p style="font-size: 10px;">${buyerAddress}</p>
+          <p style="font-size: 10px;"><strong>GSTIN/UIN:</strong> ${buyerGstin || 'Unregistered'}</p>
+          <p style="font-size: 10px;"><strong>State:</strong> ${buyerState}${buyerStateCode ? ', Code: ' + buyerStateCode : ''}</p>
+          <p style="font-size: 10px;"><strong>Place of Supply:</strong> ${placeOfSupply}</p>
+        </td>
+      </tr>
+    </table>
+    
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width: 30px;">Sl</th>
+          <th>Description of Goods</th>
+          <th style="width: 70px;">HSN/SAC</th>
+          <th style="width: 50px;">Qty</th>
+          <th style="width: 40px;">Unit</th>
+          <th style="width: 70px;">Rate</th>
+          <th style="width: 80px;">Amount</th>
+          <th style="width: 100px;">GST</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml}
+      </tbody>
+    </table>
+    
+    <div class="totals-section">
+      <div class="amount-words">
+        <p style="font-weight: bold; margin-bottom: 5px;">Amount Chargeable (in words)</p>
+        <p style="font-style: italic;">${amountInWords}</p>
+      </div>
+      <table class="totals-table">
+        <tr><td class="label">Subtotal</td><td>₹${subtotal}</td></tr>
+        ${parseFloat(cgst) > 0 ? `<tr><td class="label">CGST</td><td>₹${cgst}</td></tr>` : ''}
+        ${parseFloat(sgst) > 0 ? `<tr><td class="label">SGST</td><td>₹${sgst}</td></tr>` : ''}
+        ${parseFloat(igst) > 0 ? `<tr><td class="label">IGST</td><td>₹${igst}</td></tr>` : ''}
+        <tr style="font-weight: bold; background: #f0f0f0;"><td class="label">Grand Total</td><td>₹${grandTotal}</td></tr>
+      </table>
+    </div>
+    
+    <div class="bank-section">
+      <div class="bank-details">
+        <p style="font-weight: bold; margin-bottom: 5px;">Company's Bank Details</p>
+        ${company?.bank_name ? `<p style="font-size: 10px;"><strong>Bank Name:</strong> ${company.bank_name}</p>` : ''}
+        ${company?.bank_ac_no ? `<p style="font-size: 10px;"><strong>A/c No.:</strong> ${company.bank_ac_no}</p>` : ''}
+        ${company?.bank_branch ? `<p style="font-size: 10px;"><strong>Branch & IFSC:</strong> ${company.bank_branch}${company.bank_ifsc ? ' | ' + company.bank_ifsc : ''}</p>` : ''}
+      </div>
+      <div class="signature">
+        <p style="margin-top: 40px; border-top: 1px solid #333; padding-top: 5px;">Authorised Signatory</p>
+        <p style="font-size: 10px; margin-top: 5px;">${company?.name || ''}</p>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p>This is a Computer Generated Invoice</p>
+    </div>
+  </div>
+  
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>
+  `;
+  
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 // Debounce hook
@@ -344,6 +657,23 @@ export default function VouchersPage() {
     }
     fetchCompany();
   }, []);
+
+  // Escape key closes invoice modal instead of navigating away
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedVoucher) {
+          setSelectedVoucher(null);
+        }
+      }
+    };
+    if (selectedVoucher) {
+      window.addEventListener('keydown', handleKeyDown, true);
+      return () => window.removeEventListener('keydown', handleKeyDown, true);
+    }
+  }, [selectedVoucher]);
 
   // Fetch party ledger details when a voucher is selected
   useEffect(() => {
@@ -532,7 +862,6 @@ export default function VouchersPage() {
         { key: "voucher_number", label: "Voucher No" },
         { key: "date", label: "Date" },
         { key: "party_ledger", label: "Party Ledger" },
-        { key: "party_voucher_count", label: "Party V#" },
         { key: "pay_type", label: "Pay Type" },
         { key: "amount", label: "Amount" },
       ];
@@ -541,16 +870,16 @@ export default function VouchersPage() {
         { key: "voucher_number", label: "Voucher No" },
         { key: "date", label: "Date" },
         { key: "party_ledger", label: "Party Ledger" },
-        { key: "party_voucher_count", label: "Party V#" },
+        { key: "eway_einvoice", label: "E-Way / E-Invoice" },
         { key: "amount", label: "Amount" },
         { key: "payment_status", label: "Payment Status" },
+        { key: "actions", label: "Actions" },
       ];
     } else if (type === "purchase") {
       return [
         { key: "voucher_number", label: "Voucher No" },
         { key: "date", label: "Date" },
         { key: "party_ledger", label: "Party Ledger" },
-        { key: "party_voucher_count", label: "Party V#" },
         { key: "supplier_ref", label: "Supp. Inv. No" },
         { key: "supplier_date", label: "Supp. Date" },
         { key: "amount", label: "Amount" },
@@ -757,30 +1086,100 @@ export default function VouchersPage() {
     if (col.key === "bank_ledger") {
       return value || row.pay_type || '-';
     }
-    // Party voucher count - show this voucher's sequential number for the party
-    if (col.key === "party_voucher_count") {
-      // Calculate how many vouchers exist for this party before this one (by date)
-      const party = row.party_ledger || '';
-      const voucherDate = row.date || '';
-      const voucherId = row.guid || row.voucher_number || row.number || '';
+    // E-Way Bill / E-Invoice column for sales vouchers
+    // E-Way Bill only shows for goods sales (has inventory items) with amount > 50,000
+    if (col.key === "eway_einvoice") {
+      const ewayNo = row.eway_bill_no || row.EWAYBILLNO || row.e_way_bill_no || '';
+      const einvoiceNo = row.einvoice_no || row.EINVOICENO || row.e_invoice_no || row.irn || row.IRN || '';
       
-      // Get all vouchers for this party, sorted by date ascending
-      const partyVouchers = vouchers
-        .filter(v => (v.party_ledger || '') === party)
-        .sort((a, b) => {
-          const dateA = new Date(a.date || '1900-01-01');
-          const dateB = new Date(b.date || '1900-01-01');
-          if (dateA.getTime() !== dateB.getTime()) return dateA - dateB;
-          // If same date, sort by voucher number
-          return (a.voucher_number || '').localeCompare(b.voucher_number || '');
-        });
+      // Check if this is a goods sale (has inventory items)
+      const hasInventoryItems = Array.isArray(row.items) && row.items.length > 0;
       
-      // Find the index of this voucher
-      const index = partyVouchers.findIndex(v => 
-        (v.guid || v.voucher_number || v.number) === voucherId
+      // Get amount value for comparison
+      const amount = Math.abs(Number(row.amount) || Number(row.totalAmount) || 0);
+      
+      // E-Way Bill only applicable for goods sales with amount > 50,000
+      const showEwayBill = ewayNo && hasInventoryItems && amount > 50000;
+      
+      // E-Invoice (IRN) can be shown for all sales (goods or services)
+      if (!showEwayBill && !einvoiceNo) {
+        return <span className="text-gray-400">-</span>;
+      }
+      
+      return (
+        <div className="flex flex-col gap-0.5 text-xs">
+          {showEwayBill && (
+            <div className="flex items-center gap-1">
+              <span className="font-medium text-blue-600 dark:text-blue-400">EWB:</span>
+              <span className="text-gray-700 dark:text-gray-300">{ewayNo}</span>
+            </div>
+          )}
+          {einvoiceNo && (
+            <div className="flex items-center gap-1">
+              <span className="font-medium text-green-600 dark:text-green-400">IRN:</span>
+              <span className="text-gray-700 dark:text-gray-300 truncate max-w-[120px]" title={einvoiceNo}>{einvoiceNo.length > 15 ? einvoiceNo.slice(0, 15) + '...' : einvoiceNo}</span>
+            </div>
+          )}
+        </div>
       );
+    }
+    // Actions column for sales vouchers
+    if (col.key === "actions") {
+      const eInvoiceEnabled = isFeatureEnabled("e_invoice");
+      const eWayBillEnabled = isFeatureEnabled("e_way_bill");
       
-      return index >= 0 ? `#${index + 1}` : '-';
+      // Get e-way bill threshold from settings (default ₹50,000)
+      let ewayThreshold = 50000;
+      try {
+        const appSettings = JSON.parse(localStorage.getItem('crm_app_settings') || '{}');
+        if (appSettings.ewayBillThreshold && Number(appSettings.ewayBillThreshold) > 0) {
+          ewayThreshold = Number(appSettings.ewayBillThreshold);
+        }
+      } catch {}
+      
+      // Check amount for e-way bill eligibility
+      const amount = Math.abs(Number(row.amount) || Number(row.totalAmount) || 0);
+      const hasInventoryItems = Array.isArray(row.items) && row.items.length > 0;
+      const showEwayButton = amount > ewayThreshold && hasInventoryItems;
+      
+      return (
+        <div className="flex flex-col gap-1" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => {
+              if (!eInvoiceEnabled) {
+                alert("Coming Soon! Enable this feature from the Features page.");
+                return;
+              }
+              alert("E-Invoice generation will be integrated with GST portal.");
+            }}
+            className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition border ${
+              eInvoiceEnabled
+                ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"
+                : "bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700"
+            }`}
+          >
+            📄 {eInvoiceEnabled ? "Gen E-Invoice" : "E-Invoice (Soon)"}
+          </button>
+          {showEwayButton && (
+            <button
+              onClick={() => {
+                if (!eWayBillEnabled) {
+                  alert("Coming Soon! Enable this feature from the Features page.");
+                  return;
+                }
+                alert("E-Way Bill generation will be integrated with NIC portal.");
+              }}
+              className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition border ${
+                eWayBillEnabled
+                  ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800"
+                  : "bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700"
+              }`}
+            >
+              🚚 {eWayBillEnabled ? "Gen E-Way Bill" : "E-Way Bill (Soon)"}
+            </button>
+          )}
+        </div>
+      );
     }
     return value || '';
   };
@@ -791,7 +1190,7 @@ export default function VouchersPage() {
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />
       
       {error && <div className="text-red-600 dark:text-red-400 font-bold mb-4">{error}</div>}
-      <h1 className="text-2xl font-bold mb-4 text-blue-800 dark:text-blue-400">Vouchers</h1>
+      <h1 className="text-2xl font-bold mb-4 text-blue-800 dark:text-blue-400 glass-text">Vouchers</h1>
       
       {/* Filters Row */}
       <div className="flex flex-wrap gap-4 mb-4 items-center">
@@ -981,18 +1380,17 @@ export default function VouchersPage() {
       {/* GST Invoice Modal */}
       {selectedVoucher && (() => {
         const v = selectedVoucher;
-        // Debug: log selected voucher and supplier invoice fields
-        console.log('Selected voucher:', v);
-        console.log('Supplier Invoice Fields:', {
-          SUPPLIERINVOICENO: v.SUPPLIERINVOICENO,
-          BASICINVOICENO: v.BASICINVOICENO,
-          BASICSHIPPINGINVOICENO: v.BASICSHIPPINGINVOICENO
-        });
         const items = Array.isArray(v.items) ? v.items : [];
         const ledgers = Array.isArray(v.ledgers) ? v.ledgers : [];
         const narration = v.narration || '';
         const voucherNo = v.voucher_number || v.number || '';
-        const invoiceDate = v.date ? String(v.date).slice(0, 10) : '';
+        const invoiceDate = v.date ? (() => {
+          try {
+            const d = new Date(v.date);
+            if (isNaN(d.getTime())) return String(v.date).slice(0, 10);
+            return d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          } catch { return String(v.date).slice(0, 10); }
+        })() : '';
         // Supplier/Buyer mapping:
         // STRICT supplier/buyer assignment (do not change data extraction)
         const company = companyDetails || {};
@@ -1138,7 +1536,7 @@ export default function VouchersPage() {
           >
             <div 
               className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 flex flex-col shadow-xl print:!shadow-none print:!border-none text-gray-900 dark:text-gray-100" 
-              style={{ width: "210mm", maxWidth: "98vw", maxHeight: "95vh", minWidth: "800px" }} 
+              style={{ width: "210mm", maxWidth: "98vw", maxHeight: "95vh" }} 
               onClick={e => e.stopPropagation()}
             >
               {/* Modal Header - Fixed - Hidden when printing */}
@@ -1153,7 +1551,13 @@ export default function VouchersPage() {
                   </button>
                   <button 
                     className="px-3 py-1 bg-blue-600 text-white text-sm font-semibold rounded" 
-                    onClick={() => window.print()}
+                    onClick={() => printProfessionalInvoice(v, company, computedItems, {
+                      subtotal,
+                      cgst: cgstAmount,
+                      sgst: sgstAmount,
+                      igst: igstAmount,
+                      grandTotal: totalAmount
+                    })}
                   >
                     Print
                   </button>
@@ -1173,118 +1577,108 @@ export default function VouchersPage() {
               </div>
               
               {/* Scrollable Invoice Content - This is what gets printed */}
-              <div ref={invoiceRef} className="invoice-print-area flex-1 overflow-auto p-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 print:!overflow-visible print:!max-h-none" style={{minWidth: '760px'}}>
+              <div ref={invoiceRef} className="invoice-print-area flex-1 overflow-auto p-3 md:p-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 print:!overflow-visible print:!max-h-none">
                 {/* Invoice Header */}
                 <div className="text-center border-b border-gray-400 dark:border-gray-700 pb-2 mb-4">
                   <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">TAX INVOICE</h1>
                 </div>
                 
-                {/* Supplier and Invoice Details - Enhanced Layout like Tax Invoice */}
+                {/* Supplier and Invoice Details - Unified Table Layout like Excel */}
                 <div className="border border-gray-400 dark:border-gray-700 mb-0 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-                  <div className="flex flex-nowrap">
-                    {/* Left: Supplier Details */}
-                    <div className="flex-1 min-w-[280px] p-3 border-r border-gray-400">
-                      <p className="font-bold text-base whitespace-nowrap">{supplierName || '-'}</p>
-                      <p className="text-xs">{supplierAddress || '-'}</p>
-                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">GSTIN/UIN:</span> {supplierGstin || '-'}</p>
-                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">State Name:</span> {company.state || v.party_state || '-'}{supplierState ? `, Code: ${supplierState}` : ''}</p>
-                      {companyMobile && <p className="text-xs whitespace-nowrap"><span className="font-semibold">Contact:</span> {companyMobile}</p>}
-                      {company.email && <p className="text-xs whitespace-nowrap"><span className="font-semibold">E-Mail:</span> {company.email}</p>}
-                    </div>
-                    {/* Right: Invoice Details Grid */}
-                    <div className="w-[420px] flex-shrink-0">
-                      <table className="w-full text-xs border-collapse table-fixed">
-                        <tbody>
-                          <tr>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold w-[90px] whitespace-nowrap">Invoice No.</td>
-                            <td className="border border-gray-300 px-2 py-1 w-[120px] truncate" title={voucherNo || '-'}>{voucherNo || '-'}</td>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold w-[80px] whitespace-nowrap">Dated</td>
-                            <td className="border border-gray-300 px-2 py-1 w-[100px] whitespace-nowrap">{invoiceDate || '-'}</td>
-                          </tr>
-                          {(v.delivery_note || v.mode_of_payment) && (
-                          <tr>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Delivery Note</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.delivery_note || '-'}>{v.delivery_note || '-'}</td>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Mode/Terms</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.mode_of_payment || '-'}>{v.mode_of_payment || '-'}</td>
-                          </tr>
-                          )}
-                          {(v.reference_no || v.reference || v.other_references) && (
-                          <tr>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Reference No.</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.reference_no || v.reference || '-'}>{v.reference_no || v.reference || '-'}</td>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Other Ref.</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.other_references || '-'}>{v.other_references || '-'}</td>
-                          </tr>
-                          )}
-                          {(v.buyers_order_no || v.buyers_order_date) && (
-                          <tr>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Buyer's Order</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.buyers_order_no || '-'}>{v.buyers_order_no || '-'}</td>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Dated</td>
-                            <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{v.buyers_order_date || '-'}</td>
-                          </tr>
-                          )}
-                          {(v.dispatch_doc_no || v.delivery_note_date) && (
-                          <tr>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Dispatch Doc</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.dispatch_doc_no || '-'}>{v.dispatch_doc_no || '-'}</td>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Del. Note Date</td>
-                            <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{v.delivery_note_date || '-'}</td>
-                          </tr>
-                          )}
-                          {(v.dispatched_through || v.destination) && (
-                          <tr>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Dispatched Via</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.dispatched_through || '-'}>{v.dispatched_through || '-'}</td>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold truncate">Destination</td>
-                            <td className="border border-gray-300 px-2 py-1 truncate" title={v.destination || '-'}>{v.destination || '-'}</td>
-                          </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Consignee (Ship to) and Buyer (Bill to) */}
-                <div className="border border-t-0 border-gray-400 dark:border-gray-700 mb-0 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-                  <div className="flex flex-nowrap">
-                    {/* Consignee (Ship to) */}
-                    <div className="flex-1 min-w-[280px] p-3 border-r border-gray-400">
-                      <p className="font-semibold text-xs mb-1">Consignee (Ship to)</p>
-                      <p className="font-bold text-sm whitespace-nowrap">{v.consignee_name || buyerName || '-'}</p>
-                      <p className="text-xs">{v.consignee_address || buyerAddress || '-'}</p>
-                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">GSTIN/UIN:</span> {v.consignee_gstin || buyerGstin || 'Unregistered'}</p>
-                      <p className="text-xs whitespace-nowrap"><span className="font-semibold">State Name:</span> {v.consignee_state || partyState || '-'}{v.consignee_state_code || buyerState ? `, Code: ${v.consignee_state_code || buyerState}` : ''}</p>
-                      {(v.consignee_pincode || v.buyer_pincode) && <p className="text-xs whitespace-nowrap"><span className="font-semibold">PIN:</span> {v.consignee_pincode || v.buyer_pincode}</p>}
-                    </div>
-                    {/* Terms of Delivery */}
-                    <div className="w-[420px] flex-shrink-0 p-3">
-                      <p className="font-semibold text-xs mb-1">Terms of Delivery</p>
-                      <p className="text-xs">{v.terms_of_delivery || '-'}</p>
-                      {v.vehicle_number && <p className="text-xs mt-1"><span className="font-semibold">Vehicle No:</span> {v.vehicle_number}</p>}
-                      {v.bill_of_lading_no && <p className="text-xs"><span className="font-semibold">Bill of Lading:</span> {v.bill_of_lading_no}</p>}
-                      {v.eway_bill_no && <p className="text-xs"><span className="font-semibold">E-Way Bill:</span> {v.eway_bill_no}</p>}
-                      {v.dispatch_from_name && <p className="text-xs mt-1"><span className="font-semibold">Dispatch From:</span> {v.dispatch_from_name}{v.dispatch_from_place ? `, ${v.dispatch_from_place}` : ''}</p>}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Buyer (Bill to) */}
-                <div className="border border-t-0 border-gray-400 dark:border-gray-700 p-3 mb-4 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-                  <p className="font-semibold text-xs mb-1">Buyer (Bill to)</p>
-                  <p className="font-bold text-sm whitespace-nowrap">{buyerName || '-'}</p>
-                  <p className="text-xs">{buyerAddress || '-'}</p>
-                  <div className="flex flex-wrap gap-4 text-xs">
-                    <p className="whitespace-nowrap"><span className="font-semibold">GSTIN/UIN:</span> {buyerGstin || 'N/A'}</p>
-                    <p className="whitespace-nowrap"><span className="font-semibold">State:</span> {v.buyer_state || partyState || 'N/A'}, <span className="font-semibold">Code:</span> {v.buyer_state_code || buyerState || 'N/A'}</p>
-                    <p className="whitespace-nowrap"><span className="font-semibold">Place of Supply:</span> {placeOfSupply || 'N/A'}</p>
-                  </div>
+                  <table className="w-full border-collapse table-fixed">
+                    <tbody>
+                      {/* A1: Company Info | B1: Invoice Details */}
+                      <tr>
+                        <td className="w-1/2 p-3 border-r border-b border-gray-400 dark:border-gray-700 align-top" rowSpan={1}>
+                          <p className="font-bold text-base">{supplierName || '-'}</p>
+                          <p className="text-xs break-words">{supplierAddress || '-'}</p>
+                          <p className="text-xs"><span className="font-semibold">GSTIN/UIN:</span> {supplierGstin || '-'}</p>
+                          <p className="text-xs"><span className="font-semibold">State Name:</span> {company.state || v.party_state || '-'}{supplierState ? `, Code: ${supplierState}` : ''}</p>
+                          {companyMobile && <p className="text-xs"><span className="font-semibold">Contact:</span> {companyMobile}</p>}
+                          {company.email && <p className="text-xs"><span className="font-semibold">E-Mail:</span> {company.email}</p>}
+                        </td>
+                        <td className="w-1/2 p-0 border-b border-gray-400 dark:border-gray-700 align-top">
+                          <table className="w-full text-xs border-collapse">
+                            <tbody>
+                              <tr>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold w-[30%]">Invoice No.</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 w-[20%]">{voucherNo || '-'}</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold w-[20%]">Dated</td>
+                                <td className="border-b border-gray-300 dark:border-gray-600 px-2 py-1.5 w-[30%]">{invoiceDate || '-'}</td>
+                              </tr>
+                              <tr>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Delivery Note</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.delivery_note || '-'}</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Mode/Terms</td>
+                                <td className="border-b border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.mode_of_payment || '-'}</td>
+                              </tr>
+                              <tr>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Reference No.</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.reference_no || v.reference || '-'}</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Other Ref.</td>
+                                <td className="border-b border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.other_references || '-'}</td>
+                              </tr>
+                              <tr>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Buyer's Order</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.buyers_order_no || '-'}</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Dated</td>
+                                <td className="border-b border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.buyers_order_date || '-'}</td>
+                              </tr>
+                              <tr>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Dispatch Doc</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.dispatch_doc_no || '-'}</td>
+                                <td className="border-b border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Del. Note Date</td>
+                                <td className="border-b border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.delivery_note_date || '-'}</td>
+                              </tr>
+                              <tr>
+                                <td className="border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Dispatched Via</td>
+                                <td className="border-r border-gray-300 dark:border-gray-600 px-2 py-1.5">{v.dispatched_through || '-'}</td>
+                                <td className="border-r border-gray-300 dark:border-gray-600 px-2 py-1.5 font-semibold">Destination</td>
+                                <td className="px-2 py-1.5">{v.destination || '-'}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                      {/* A2: Consignee (Ship to) | B2+B3: Terms of Delivery (merged) */}
+                      <tr>
+                        <td className="w-1/2 p-3 border-r border-b border-gray-400 dark:border-gray-700 align-top">
+                          <p className="font-semibold text-xs mb-1">Consignee (Ship to)</p>
+                          <p className="font-bold text-sm">{v.consignee_name || buyerName || '-'}</p>
+                          <p className="text-xs break-words">{v.consignee_address || buyerAddress || '-'}</p>
+                          <p className="text-xs"><span className="font-semibold">GSTIN/UIN:</span> {v.consignee_gstin || buyerGstin || 'Unregistered'}</p>
+                          <p className="text-xs"><span className="font-semibold">State Name:</span> {v.consignee_state || partyState || '-'}{v.consignee_state_code || buyerState ? `, Code: ${v.consignee_state_code || buyerState}` : ''}</p>
+                          {(v.consignee_pincode || v.buyer_pincode) && <p className="text-xs"><span className="font-semibold">PIN:</span> {v.consignee_pincode || v.buyer_pincode}</p>}
+                        </td>
+                        <td className="w-1/2 p-3 align-top" rowSpan={2}>
+                          <p className="font-semibold text-xs mb-1">Terms of Delivery</p>
+                          <p className="text-xs break-words">{v.terms_of_delivery || '-'}</p>
+                          {v.vehicle_number && <p className="text-xs mt-2"><span className="font-semibold">Vehicle No:</span> {v.vehicle_number}</p>}
+                          {v.bill_of_lading_no && <p className="text-xs"><span className="font-semibold">Bill of Lading:</span> {v.bill_of_lading_no}</p>}
+                          {v.eway_bill_no && <p className="text-xs"><span className="font-semibold">E-Way Bill:</span> {v.eway_bill_no}</p>}
+                          {(v.einvoice_no || v.irn || v.IRN) && <p className="text-xs break-all"><span className="font-semibold">E-Invoice (IRN):</span> {v.einvoice_no || v.irn || v.IRN}</p>}
+                          {v.dispatch_from_name && <p className="text-xs mt-2"><span className="font-semibold">Dispatch From:</span> {v.dispatch_from_name}{v.dispatch_from_place ? `, ${v.dispatch_from_place}` : ''}</p>}
+                          {v.destination && <p className="text-xs"><span className="font-semibold">Destination:</span> {v.destination}</p>}
+                          {v.dispatched_through && <p className="text-xs"><span className="font-semibold">Dispatched Via:</span> {v.dispatched_through}</p>}
+                        </td>
+                      </tr>
+                      {/* A3: Buyer (Bill to) | (merged terms continues) */}
+                      <tr>
+                        <td className="w-1/2 p-3 border-r border-gray-400 dark:border-gray-700 align-top">
+                          <p className="font-semibold text-xs mb-1">Buyer (Bill to)</p>
+                          <p className="font-bold text-sm">{buyerName || '-'}</p>
+                          <p className="text-xs break-words">{buyerAddress || '-'}</p>
+                          <p className="text-xs"><span className="font-semibold">GSTIN/UIN:</span> {buyerGstin || 'N/A'}</p>
+                          <p className="text-xs"><span className="font-semibold">State:</span> {v.buyer_state || partyState || 'N/A'}, <span className="font-semibold">Code:</span> {v.buyer_state_code || buyerState || 'N/A'}</p>
+                          <p className="text-xs"><span className="font-semibold">Place of Supply:</span> {placeOfSupply || 'N/A'}</p>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
                 
                 {/* Items Table */}
-                <div className="border border-gray-400 dark:border-gray-700 mb-2 print:break-inside-auto bg-white dark:bg-gray-900">
+                <div className="border border-gray-400 dark:border-gray-700 mb-2 print:break-inside-auto bg-white dark:bg-gray-900 overflow-x-auto">
                   <table className="w-full text-xs border-collapse bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
                     <thead>
                       <tr className="bg-gray-100 dark:bg-gray-800">

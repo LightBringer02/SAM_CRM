@@ -218,7 +218,7 @@ export default function Todos() {
   return (
     <div className="p-6 min-h-screen">
       <div className="flex items-center justify-between mb-6">
-        <div>
+        <div className="glass-text">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Tasks & Follow-ups</h1>
           <p className="text-gray-500 dark:text-gray-400">Manage your tasks and schedule follow-ups</p>
         </div>
@@ -251,7 +251,7 @@ export default function Todos() {
 
       <div className="flex flex-wrap gap-4 mb-6 items-center justify-between">
         <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 pr-4 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 w-64" /></div>
+          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 pr-4 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 w-full max-w-[16rem]" /></div>
           {/* Priority Radio Filter */}
           <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-1">
             <button onClick={() => setFilterPriority("")} className={`px-3 py-1.5 text-sm rounded-md transition ${filterPriority === "" ? "bg-blue-600 text-white" : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>All</button>

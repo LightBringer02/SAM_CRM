@@ -1,11 +1,37 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../auth.jsx";
 import { useTheme } from "../theme.jsx";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, X, Bell } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import Navbar from "../components/Navbar.jsx";
 import RightPane from "../components/RightPane.jsx";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+
+// Global Reminder Keys
+const REMINDERS_KEY = 'crm_calendar_reminders';
+const NOTIFICATIONS_KEY = 'crm_notifications';
+
+// Helper to add notification
+function addGlobalNotification(notification) {
+  try {
+    const notifications = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY) || '[]');
+    notifications.unshift({
+      id: Date.now(),
+      type: notification.type || 'info',
+      title: notification.title || 'Notification',
+      message: notification.message,
+      time: new Date().toISOString(),
+      read: false
+    });
+    localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(notifications));
+    window.dispatchEvent(new CustomEvent('notificationAdded'));
+  } catch (e) {
+    console.error('Failed to add notification:', e);
+  }
+}
+
+// Export for use in other components
+window.addCRMNotification = addGlobalNotification;
 
 // Abstract pattern renderer component
 function AbstractPatterns({ pattern, primary, accent, dark }) {
@@ -20,7 +46,7 @@ function AbstractPatterns({ pattern, primary, accent, dark }) {
   
   // Reduce opacity significantly or hide on photo backgrounds to avoid visual clutter
   const hasPhoto = isPhotoBackground();
-  const opacity = hasPhoto ? 0 : (dark ? 0.7 : 0.5);
+  const opacity = hasPhoto ? 0 : (dark ? 0.15 : 0.1);
   
   // Return nothing if no pattern or if photo background is active
   if (!pattern || !primary || hasPhoto) return null;
@@ -180,13 +206,79 @@ export default function MainLayout({ children }) {
   const { currentUser } = useAuth();
   const { currentTheme, dark, abstractPattern, colorTheme } = useTheme();
   const [showProfileAlert, setShowProfileAlert] = useState(false);
+  const [reminderPopup, setReminderPopup] = useState(null);
   // Sidebar collapsed state: default true, persist in localStorage per user
   const userKey = currentUser?.username || 'default';
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = window.localStorage.getItem(`sidebarCollapsed_${userKey}`);
     return saved === null ? true : saved === 'true';
   });
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Global Reminder Checker - runs every 15 seconds to check for due reminders
+  useEffect(() => {
+    const checkReminders = () => {
+      try {
+        const reminders = JSON.parse(localStorage.getItem(REMINDERS_KEY) || '[]');
+        const now = new Date();
+        let hasTriggered = false;
+        
+        const updated = reminders.map(reminder => {
+          if (reminder.triggered) return reminder;
+          
+          const reminderDateTime = new Date(`${reminder.date}T${reminder.time}`);
+          if (reminderDateTime <= now) {
+            // Show popup ONLY - do NOT add notification here (user will see popup)
+            setReminderPopup({
+              task: reminder.task,
+              date: reminder.date,
+              time: reminder.time
+            });
+            
+            hasTriggered = true;
+            return { ...reminder, triggered: true };
+          }
+          return reminder;
+        });
+        
+        if (hasTriggered) {
+          localStorage.setItem(REMINDERS_KEY, JSON.stringify(updated));
+        }
+      } catch (e) {
+        console.error('Error checking reminders:', e);
+      }
+    };
+    
+    checkReminders(); // Check immediately on mount
+    const interval = setInterval(checkReminders, 15000); // Check every 15 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  // Global Escape key handler - navigate back on all pages
+  useEffect(() => {
+    const handleEscapeKey = (e) => {
+      if (e.key === 'Escape') {
+        // Check if any modal is open (look for z-50 modals)
+        const hasOpenModal = document.querySelector('.fixed.inset-0.z-50, [class*="fixed"][class*="z-50"]');
+        // Only navigate back if no modal is open (modals handle their own escape)
+        if (!hasOpenModal) {
+          e.preventDefault();
+          navigate(-1);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleEscapeKey);
+    return () => window.removeEventListener('keydown', handleEscapeKey);
+  }, [navigate]);
+
+  const toggleMobileMenu = useCallback(() => setMobileMenuOpen(prev => !prev), []);
 
   useEffect(() => {
     if (currentUser && !currentUser.email) {
@@ -204,10 +296,41 @@ export default function MainLayout({ children }) {
   }, [sidebarCollapsed, userKey]);
 
   return (
-    <div 
-      className="flex flex-row h-screen w-full transition-colors duration-300 relative"
-      style={{ backgroundColor: 'transparent' }}
-    >
+    <>
+      {/* Global Reminder Popup */}
+      {reminderPopup && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 transform animate-pulse">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full animate-bounce">
+                <Bell className="w-8 h-8 text-yellow-600 dark:text-yellow-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Reminder!</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Task Due</p>
+              </div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+              <p className="text-lg font-medium text-gray-800 dark:text-gray-200">{reminderPopup.task}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                Scheduled for {new Date(reminderPopup.date).toLocaleDateString()} at {reminderPopup.time}
+              </p>
+            </div>
+            <button
+              onClick={() => setReminderPopup(null)}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+            >
+              <X className="w-5 h-5" />
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+      
+      <div 
+        className="flex flex-row h-screen w-full transition-colors duration-300 relative"
+        style={{ backgroundColor: 'transparent' }}
+      >
       {/* Abstract theme background pattern - Dynamic based on selected theme */}
       {/* Hide gradient orbs when photo background is active */}
       {(() => {
@@ -240,9 +363,23 @@ export default function MainLayout({ children }) {
         dark={dark}
       />
       
-      <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} className="relative z-10" />
+      {/* Desktop Sidebar - hidden on mobile */}
+      <div className="hidden md:block relative z-10">
+        <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
+      </div>
+
+      {/* Mobile Sidebar Overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[200] md:hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
+          <div className="relative w-64 h-full z-10 animate-fade-in">
+            <Sidebar collapsed={false} setCollapsed={() => setMobileMenuOpen(false)} />
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col flex-1 min-w-0 relative z-10">
-        <Navbar />
+        <Navbar onToggleMobileMenu={toggleMobileMenu} mobileMenuOpen={mobileMenuOpen} />
         {showProfileAlert && (
           <div 
             className="border-b-2 px-6 py-3 flex items-center justify-between gap-4"
@@ -274,7 +411,7 @@ export default function MainLayout({ children }) {
           </div>
         )}
         <main 
-          className="p-6 overflow-y-auto flex-1"
+          className="p-4 md:p-6 overflow-y-auto flex-1"
           style={{ 
             color: currentTheme?.text || (dark ? '#e2e8f0' : '#1e293b')
           }}
@@ -282,7 +419,11 @@ export default function MainLayout({ children }) {
           {children}
         </main>
       </div>
-      <RightPane />
+      {/* RightPane - hidden on mobile to avoid content overlap */}
+      <div className="hidden md:block">
+        <RightPane />
+      </div>
     </div>
+    </>
   );
 }

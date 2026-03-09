@@ -30,6 +30,8 @@ import {
   PanelLeftClose,
   PanelLeft,
   Plug,
+  Truck,
+  Zap,
 } from "lucide-react";
 import { useTheme } from "../theme.jsx";
 import { useAuth } from "../auth.jsx";
@@ -38,6 +40,7 @@ const navItems = [
   { name: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
   { name: "Vouchers", icon: Receipt, path: "/vouchers" },
   { name: "Orders", icon: ShoppingCart, path: "/orders" },
+  { name: "Delivery", icon: Truck, path: "/delivery" },
   { 
     name: "Ledgers", 
     icon: BookOpen, 
@@ -50,6 +53,7 @@ const navItems = [
     ]
   },
   { name: "Inventory", icon: Boxes, path: "/inventory" },
+  { name: "Rate List", icon: ListOrdered, path: "/rate-list" },
   { name: "Employees", icon: BriefcaseBusiness, path: "/employees" },
   { name: "Communication", icon: MessageSquare, path: "/communication" },
   { name: "Reports", icon: LineChart, path: "/reports" },
@@ -122,9 +126,9 @@ export default function Sidebar({ collapsed, setCollapsed }) {
 
   return (
     <div 
-      className={`h-screen flex flex-col transition-all duration-300 overflow-x-hidden backdrop-blur-xl ${collapsed ? 'w-16' : 'w-64'}`} 
+      className={`h-screen flex flex-col transition-all duration-300 overflow-x-hidden backdrop-blur-xl ${collapsed ? 'w-16' : 'w-64 max-w-[85vw]'}`} 
       style={{
-        minWidth: collapsed ? 64 : 256,
+        minWidth: collapsed ? 64 : undefined,
         backgroundColor: dark 
           ? 'rgba(26, 26, 58, 0.65)' 
           : 'rgba(248, 250, 252, 0.65)',
@@ -333,6 +337,17 @@ export default function Sidebar({ collapsed, setCollapsed }) {
                 >
                   <Plug className="w-5 h-5" />
                   <span>API Configuration</span>
+                </Link>
+              )}
+              {/* ROOT-only link for Feature Management */}
+              {user?.role === "root" && (
+                <Link
+                  to="/features"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                >
+                  <Zap className="w-5 h-5" />
+                  <span>Features</span>
                 </Link>
               )}
               {/* ROOT and ADMIN link for Queue Management */}

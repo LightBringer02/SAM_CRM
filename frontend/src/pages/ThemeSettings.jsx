@@ -145,8 +145,6 @@ export default function ThemeSettings() {
 
   // Apply theme function
   const applyTheme = (themeId = selectedTheme, imageId = selectedImage, unsplashUrl = selectedUnsplashUrl, mode = activeMode) => {
-    console.debug('[ThemeSettings] applyTheme called with', { themeId, imageId, unsplashUrl, mode });
-
     // Persist mode
     try { localStorage.setItem('crm_active_theme_mode', mode); } catch {}
     setActiveMode(mode);
@@ -158,7 +156,6 @@ export default function ThemeSettings() {
     // MODE: color => set CSS color vars and clear background
     if (mode === 'color') {
       const theme = THEME_PRESETS.find(t => t.id === themeId) || THEME_PRESETS[0];
-      console.debug('[ThemeSettings] Applying color mode theme:', theme.id);
       // Save to localStorage
       try { localStorage.setItem('crm_selected_theme', theme.id); } catch {}
       try { localStorage.setItem('crm_theme_image', 'none'); } catch {}
@@ -177,7 +174,6 @@ export default function ThemeSettings() {
       applyBackgroundToRoot('none');
       document.body.style.background = '';
       document.body.style.backgroundImage = 'none';
-      console.debug('[ThemeSettings] Color applied, backgrounds cleared');
       return;
     }
 
@@ -206,9 +202,7 @@ export default function ThemeSettings() {
     // Apply background to HTML root element (ensures it shows behind all layers)
     if (imageId?.startsWith('unsplash_') && unsplashUrl) {
       // photo
-      console.debug('[ThemeSettings] Applying photo mode with:', unsplashUrl);
       applyBackgroundToRoot(unsplashUrl, false);
-      console.debug('[ThemeSettings] Photo applied to root');
       return;
     }
 
@@ -216,16 +210,13 @@ export default function ThemeSettings() {
       const imageData = DEFAULT_IMAGES.find(i => i.id === imageId);
       if (imageData?.url && imageData.url.startsWith('linear-gradient')) {
         // gradient
-        console.debug('[ThemeSettings] Applying gradient mode:', imageData.url);
         applyBackgroundToRoot(imageData.url, true);
-        console.debug('[ThemeSettings] Gradient applied to root');
         return;
       }
     }
 
     // If we reach here, clear any backgrounds
     applyBackgroundToRoot('none');
-    console.debug('[ThemeSettings] Cleared backgrounds (none selected)');
   };
 
   // Select Unsplash image - use full resolution for HD quality
@@ -241,14 +232,12 @@ export default function ThemeSettings() {
     setSelectedTheme('');
     setActiveMode('photo');
     try { localStorage.setItem('crm_active_theme_mode', 'photo'); } catch {}
-    console.debug('[ThemeSettings] Unsplash image selected (clearing color selection):', imageId, imageUrl);
     // Immediately preview the selected unsplash image to prevent user confusion
     applyTheme('', imageId, imageUrl, 'photo');
   };
 
   // Apply saved theme on mount (respect activeMode)
   useEffect(() => {
-    console.debug('[ThemeSettings] Initializing theme with mode:', activeMode, { selectedTheme, selectedImage, selectedUnsplashUrl });
     applyTheme(selectedTheme, selectedImage, selectedUnsplashUrl, activeMode);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -262,7 +251,6 @@ export default function ThemeSettings() {
   const [applyMessage, setApplyMessage] = useState("");
 
   const handleApply = () => {
-    console.debug('[ThemeSettings] Apply button clicked');
     applyTheme(selectedTheme, selectedImage, selectedUnsplashUrl, activeMode);
     setApplyMessage('Theme applied');
     setTimeout(() => setApplyMessage(''), 1500);
@@ -270,7 +258,6 @@ export default function ThemeSettings() {
   
   // Handle Done button
   const handleDone = () => {
-    console.debug('[ThemeSettings] Done button clicked');
     applyTheme(selectedTheme, selectedImage, selectedUnsplashUrl, activeMode);
     setApplyMessage('Theme applied');
     // Small delay so console logs and DOM updates are visible before navigation
@@ -291,7 +278,7 @@ export default function ThemeSettings() {
           >
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <div>
+          <div className="glass-text">
             <h1 className="text-2xl font-bold flex items-center gap-3">
               <Palette className="w-7 h-7 text-purple-500" />
               Theme Settings
@@ -332,7 +319,6 @@ export default function ThemeSettings() {
                 setSelectedUnsplashUrl('');
                 setActiveMode('color');
                 try { localStorage.setItem('crm_active_theme_mode', 'color'); } catch {}
-                console.debug('[ThemeSettings] Color theme selected, clearing background selection');
                 applyTheme(prevTheme, 'none', '', 'color');
               }}
               className={`relative p-4 rounded-xl border-2 transition-all hover:scale-105 ${
@@ -388,7 +374,6 @@ export default function ThemeSettings() {
                 setSelectedTheme('');
                 setActiveMode('gradient');
                 try { localStorage.setItem('crm_active_theme_mode', 'gradient'); } catch {}
-                console.debug('[ThemeSettings] Gradient selected, clearing color theme selection');
                 applyTheme('', img.id, '', 'gradient');
               }}
               className={`relative h-20 rounded-xl border-2 transition-all hover:scale-105 overflow-hidden ${

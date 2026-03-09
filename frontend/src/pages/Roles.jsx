@@ -1,110 +1,112 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
-import { Shield, Plus, Trash2, Edit2, Save, X, Users, Check } from "lucide-react";
+import { useTheme } from "../theme";
+import { Shield, Plus, Trash2, Edit2, Save, X, Users, Check, Eye, PenLine, FilePlus, Trash } from "lucide-react";
 
-// All available permissions in the system
-const ALL_PERMISSIONS = [
-  { id: "view_dashboard", name: "View Dashboard", category: "Dashboard" },
-  { id: "view_vouchers", name: "View Vouchers", category: "Vouchers" },
-  { id: "edit_vouchers", name: "Edit Vouchers", category: "Vouchers" },
-  { id: "delete_vouchers", name: "Delete Vouchers", category: "Vouchers" },
-  { id: "export_vouchers", name: "Export Vouchers", category: "Vouchers" },
-  { id: "view_inventory", name: "View Inventory", category: "Inventory" },
-  { id: "manage_inventory", name: "Manage Inventory", category: "Inventory" },
-  { id: "view_rates", name: "View Item Rates", category: "Inventory" },
-  { id: "view_ledgers", name: "View Ledgers", category: "Ledgers" },
-  { id: "manage_ledgers", name: "Manage Ledgers", category: "Ledgers" },
-  { id: "view_blacklisted_ledgers", name: "View Blacklisted Ledgers", category: "Ledgers" },
-  { id: "view_reports", name: "View Reports", category: "Reports" },
-  { id: "export_reports", name: "Export Reports", category: "Reports" },
-  { id: "view_employees", name: "View Employees", category: "Employees" },
-  { id: "manage_employees", name: "Manage Employees", category: "Employees" },
-  { id: "view_users", name: "View Users", category: "Users" },
-  { id: "manage_users", name: "Manage Users", category: "Users" },
-  { id: "view_settings", name: "View Settings", category: "Settings" },
-  { id: "manage_settings", name: "Manage Settings", category: "Settings" },
-  { id: "view_logs", name: "View Logs", category: "System" },
-  { id: "manage_backups", name: "Manage Backups", category: "System" },
-  { id: "manage_queue", name: "Manage Queue", category: "System" },
+// ── Pages with CRUD permissions ──────────────────────────────────────
+const PERMISSION_PAGES = [
+  { id: "dashboard", name: "Dashboard" },
+  { id: "vouchers", name: "Vouchers" },
+  { id: "orders", name: "Orders" },
+  { id: "ledgers", name: "Ledgers" },
+  { id: "inventory", name: "Inventory" },
+  { id: "employees", name: "Employees" },
+  { id: "communication", name: "Communication" },
+  { id: "reports", name: "Reports" },
+  { id: "queue_management", name: "Queue Management" },
+  { id: "backup_management", name: "Backup Management" },
 ];
 
-// Default roles with their permissions
+const OPERATIONS = [
+  { id: "view", name: "View", icon: Eye },
+  { id: "create", name: "Create", icon: FilePlus },
+  { id: "edit", name: "Edit", icon: PenLine },
+  { id: "delete", name: "Delete", icon: Trash },
+];
+
+// Extra permissions not tied to a page CRUD
+const EXTRA_PERMISSIONS = [
+  { id: "view_rates", name: "View Item Rates" },
+  { id: "manage_users", name: "Manage Users" },
+  { id: "manage_roles", name: "Manage Roles" },
+  { id: "view_logs", name: "View System Logs" },
+  { id: "generate_invoice", name: "Generate Invoice from Orders" },
+  { id: "export_data", name: "Export / Print Data" },
+];
+
+// Generate all permission IDs
+function getAllPermissionIds() {
+  const ids = [];
+  PERMISSION_PAGES.forEach(page => {
+    OPERATIONS.forEach(op => { ids.push(`${page.id}_${op.id}`); });
+  });
+  EXTRA_PERMISSIONS.forEach(p => ids.push(p.id));
+  return ids;
+}
+
+const ALL_PERMISSION_IDS = getAllPermissionIds();
+
+// Default roles
 const DEFAULT_ROLES = [
   {
-    id: "root",
-    name: "Root",
-    description: "Full system access - cannot be modified",
-    permissions: ALL_PERMISSIONS.map(p => p.id),
-    isSystem: true,
-    canDelete: false
+    id: "root", name: "Root", description: "Full system access — cannot be modified",
+    permissions: ALL_PERMISSION_IDS, isSystem: true, canDelete: false, hidden: true,
   },
   {
-    id: "admin",
-    name: "Admin",
-    description: "Administrative access",
-    permissions: ALL_PERMISSIONS.filter(p => !["manage_backups", "manage_queue"].includes(p.id)).map(p => p.id),
-    isSystem: true,
-    canDelete: false
+    id: "admin", name: "Admin", description: "Full business access",
+    permissions: ALL_PERMISSION_IDS.filter(p => !p.startsWith("queue_management_") && !p.startsWith("backup_management_")),
+    isSystem: true, canDelete: false,
   },
   {
-    id: "manager",
-    name: "Manager",
-    description: "Management level access",
-    permissions: ["view_dashboard", "view_vouchers", "edit_vouchers", "view_inventory", "view_ledgers", "view_reports", "export_reports", "view_employees"],
-    isSystem: true,
-    canDelete: false
+    id: "manager", name: "Manager", description: "Management level access",
+    permissions: [
+      "dashboard_view", "vouchers_view", "vouchers_create", "vouchers_edit",
+      "orders_view", "orders_create", "ledgers_view", "inventory_view",
+      "employees_view", "communication_view", "communication_create",
+      "reports_view", "view_rates", "export_data",
+    ],
+    isSystem: true, canDelete: false,
   },
   {
-    id: "staff",
-    name: "Staff",
-    description: "Staff level access",
-    permissions: ["view_dashboard", "view_vouchers", "view_inventory", "view_ledgers"],
-    isSystem: true,
-    canDelete: false
+    id: "staff", name: "Staff", description: "Staff level access",
+    permissions: [
+      "dashboard_view", "vouchers_view", "orders_view", "ledgers_view",
+      "inventory_view", "communication_view",
+    ],
+    isSystem: true, canDelete: false,
   },
   {
-    id: "user",
-    name: "User",
-    description: "Basic user access",
-    permissions: ["view_dashboard"],
-    isSystem: true,
-    canDelete: false
-  }
+    id: "user", name: "User", description: "Basic user access",
+    permissions: ["dashboard_view"], isSystem: true, canDelete: false,
+  },
 ];
 
-// Get roles from localStorage or use defaults
+// ── Storage helpers ──────────────────────────────────────────────────
 function getRolesFromStorage() {
   try {
     const stored = localStorage.getItem("system_roles");
     if (stored) {
       const parsed = JSON.parse(stored);
-      // Merge with defaults to ensure system roles exist
       const systemRoleIds = DEFAULT_ROLES.map(r => r.id);
       const customRoles = parsed.filter(r => !systemRoleIds.includes(r.id));
       return [...DEFAULT_ROLES, ...customRoles];
     }
-  } catch (err) {
-    console.error("Failed to load roles:", err);
-  }
+  } catch (err) { console.error("Failed to load roles:", err); }
   return DEFAULT_ROLES;
 }
 
-// Save roles to localStorage
 function saveRolesToStorage(roles) {
-  try {
-    localStorage.setItem("system_roles", JSON.stringify(roles));
-    return true;
-  } catch (err) {
-    console.error("Failed to save roles:", err);
-    return false;
-  }
+  try { localStorage.setItem("system_roles", JSON.stringify(roles)); return true; }
+  catch (err) { console.error("Failed to save roles:", err); return false; }
 }
 
+// ── Component ────────────────────────────────────────────────────────
 export default function RolesPage() {
   const { user, isRoot, isAdminOrHigher } = useAuth();
+  const { currentTheme } = useTheme();
   const navigate = useNavigate();
-  
+
   const [roles, setRoles] = useState([]);
   const [selectedRole, setSelectedRole] = useState(null);
   const [editingRole, setEditingRole] = useState(null);
@@ -116,406 +118,233 @@ export default function RolesPage() {
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Check access and load roles
+  const userIsRoot = user?.role?.toLowerCase() === "root";
+  const userIsAdminOrHigher = user?.role?.toLowerCase() === "admin" || userIsRoot;
+
   useEffect(() => {
-    // Check if user has admin or higher access
-    const userRole = user?.role?.toLowerCase();
-    const hasAccess = userRole === 'root' || userRole === 'admin';
-    
-    if (!user) {
-      navigate("/login");
-      return;
-    }
-    
-    if (!hasAccess) {
-      navigate("/dashboard");
-      return;
-    }
-    
-    // Load roles
-    const loadedRoles = getRolesFromStorage();
-    setRoles(loadedRoles);
+    if (!user) { navigate("/login"); return; }
+    if (!userIsAdminOrHigher) { navigate("/dashboard"); return; }
+    setRoles(getRolesFromStorage());
     setLoading(false);
-  }, [user, navigate]);
+  }, [user, navigate, userIsAdminOrHigher]);
 
-  // Create new role
+  // Hide root from non-root users
+  const visibleRoles = roles.filter(r => !(r.id === "root" && !userIsRoot));
+
   const handleCreateRole = () => {
-    if (!newRoleName.trim()) {
-      setMessage({ type: "error", text: "Role name is required" });
-      return;
-    }
-    
+    if (!newRoleName.trim()) { setMessage({ type: "error", text: "Role name is required" }); return; }
     const roleId = newRoleName.toLowerCase().replace(/\s+/g, "_");
-    if (roles.some(r => r.id === roleId)) {
-      setMessage({ type: "error", text: "A role with this name already exists" });
-      return;
-    }
-
-    const newRole = {
-      id: roleId,
-      name: newRoleName.trim(),
-      description: newRoleDesc.trim() || `Custom role: ${newRoleName}`,
-      permissions: newRolePerms,
-      isSystem: false,
-      canDelete: true,
-      createdAt: new Date().toISOString()
-    };
-
-    const updatedRoles = [...roles, newRole];
-    if (saveRolesToStorage(updatedRoles)) {
-      setRoles(updatedRoles);
-      setShowCreateModal(false);
-      setNewRoleName("");
-      setNewRoleDesc("");
-      setNewRolePerms([]);
-      setMessage({ type: "success", text: `Role "${newRole.name}" created successfully!` });
-    } else {
-      setMessage({ type: "error", text: "Failed to save role" });
+    if (roles.some(r => r.id === roleId)) { setMessage({ type: "error", text: "Role already exists" }); return; }
+    const newRole = { id: roleId, name: newRoleName.trim(), description: newRoleDesc.trim() || `Custom role: ${newRoleName}`, permissions: newRolePerms, isSystem: false, canDelete: true, createdAt: new Date().toISOString() };
+    const updated = [...roles, newRole];
+    if (saveRolesToStorage(updated)) {
+      setRoles(updated); setShowCreateModal(false); setNewRoleName(""); setNewRoleDesc(""); setNewRolePerms([]);
+      setMessage({ type: "success", text: `Role "${newRole.name}" created!` });
     }
   };
 
-  // Delete role
   const handleDeleteRole = (roleId) => {
     const role = roles.find(r => r.id === roleId);
-    if (!role || !role.canDelete) {
-      setMessage({ type: "error", text: "This role cannot be deleted" });
-      return;
-    }
-
-    if (!window.confirm(`Are you sure you want to delete the role "${role.name}"?`)) {
-      return;
-    }
-
-    const updatedRoles = roles.filter(r => r.id !== roleId);
-    if (saveRolesToStorage(updatedRoles)) {
-      setRoles(updatedRoles);
-      if (selectedRole?.id === roleId) {
-        setSelectedRole(null);
-      }
-      setMessage({ type: "success", text: `Role "${role.name}" deleted successfully!` });
-    } else {
-      setMessage({ type: "error", text: "Failed to delete role" });
-    }
+    if (!role?.canDelete) return;
+    if (!window.confirm(`Delete role "${role.name}"?`)) return;
+    const updated = roles.filter(r => r.id !== roleId);
+    if (saveRolesToStorage(updated)) { setRoles(updated); if (selectedRole?.id === roleId) setSelectedRole(null); setMessage({ type: "success", text: `Deleted.` }); }
   };
 
-  // Start editing role permissions
   const handleEditRole = (role) => {
-    if (role.id === "root") {
-      setMessage({ type: "error", text: "Root role permissions cannot be modified" });
-      return;
-    }
-    setEditingRole(role);
-    setEditingPerms([...role.permissions]);
+    if (role.id === "root") { setMessage({ type: "error", text: "Root role cannot be modified" }); return; }
+    setEditingRole(role); setEditingPerms([...role.permissions]);
   };
 
-  // Save edited permissions
   const handleSavePermissions = () => {
     if (!editingRole) return;
-
-    const updatedRoles = roles.map(r => 
-      r.id === editingRole.id 
-        ? { ...r, permissions: editingPerms, updatedAt: new Date().toISOString() }
-        : r
-    );
-
-    if (saveRolesToStorage(updatedRoles)) {
-      setRoles(updatedRoles);
-      setEditingRole(null);
-      setEditingPerms([]);
-      setMessage({ type: "success", text: `Permissions updated for "${editingRole.name}"!` });
-    } else {
-      setMessage({ type: "error", text: "Failed to save permissions" });
-    }
+    const updated = roles.map(r => r.id === editingRole.id ? { ...r, permissions: editingPerms, updatedAt: new Date().toISOString() } : r);
+    if (saveRolesToStorage(updated)) { setRoles(updated); setEditingRole(null); setEditingPerms([]); setMessage({ type: "success", text: `Permissions updated for "${editingRole.name}"!` }); }
   };
 
-  // Toggle permission
-  const togglePermission = (permId, permsArray, setPermsArray) => {
-    if (permsArray.includes(permId)) {
-      setPermsArray(permsArray.filter(p => p !== permId));
-    } else {
-      setPermsArray([...permsArray, permId]);
-    }
+  const togglePerm = (permId, arr, setArr) => setArr(arr.includes(permId) ? arr.filter(p => p !== permId) : [...arr, permId]);
+
+  const togglePageAll = (pageId, arr, setArr) => {
+    const pp = OPERATIONS.map(op => `${pageId}_${op.id}`);
+    setArr(pp.every(p => arr.includes(p)) ? arr.filter(p => !pp.includes(p)) : [...new Set([...arr, ...pp])]);
   };
 
-  // Group permissions by category
-  const groupedPermissions = ALL_PERMISSIONS.reduce((acc, perm) => {
-    if (!acc[perm.category]) {
-      acc[perm.category] = [];
-    }
-    acc[perm.category].push(perm);
-    return acc;
-  }, {});
-
-  // Helper to check if current user is root
-  const userIsRoot = user?.role?.toLowerCase() === 'root';
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
+  // ── Permission Matrix Component ──────────────────────────────────
+  const PermissionMatrix = ({ perms, setPerms, readOnly = false }) => (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              <th className="text-left py-2 px-3 font-semibold" style={{ color: currentTheme?.text }}>Page</th>
+              {OPERATIONS.map(op => {
+                const Icon = op.icon;
+                return (
+                  <th key={op.id} className="text-center py-2 px-2 font-medium" style={{ color: currentTheme?.textMuted }}>
+                    <div className="flex flex-col items-center gap-0.5"><Icon className="w-3.5 h-3.5" /><span className="text-[10px]">{op.name}</span></div>
+                  </th>
+                );
+              })}
+              <th className="text-center py-2 px-2 font-medium" style={{ color: currentTheme?.textMuted }}><span className="text-[10px]">All</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {PERMISSION_PAGES.map(page => {
+              const pp = OPERATIONS.map(op => `${page.id}_${op.id}`);
+              const allChecked = pp.every(p => perms.includes(p));
+              const someChecked = pp.some(p => perms.includes(p));
+              return (
+                <tr key={page.id} className="border-t" style={{ borderColor: currentTheme?.border }}>
+                  <td className="py-2 px-3 font-medium" style={{ color: currentTheme?.text }}>{page.name}</td>
+                  {OPERATIONS.map(op => {
+                    const permId = `${page.id}_${op.id}`;
+                    return (
+                      <td key={op.id} className="text-center py-2 px-2">
+                        <input type="checkbox" checked={perms.includes(permId)} onChange={() => !readOnly && togglePerm(permId, perms, setPerms)} disabled={readOnly}
+                          className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer disabled:cursor-default disabled:opacity-60" />
+                      </td>
+                    );
+                  })}
+                  <td className="text-center py-2 px-2">
+                    <input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = someChecked && !allChecked; }}
+                      onChange={() => !readOnly && togglePageAll(page.id, perms, setPerms)} disabled={readOnly}
+                      className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer disabled:cursor-default disabled:opacity-60" />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-    );
-  }
+      <div className="mt-4 pt-4 border-t" style={{ borderColor: currentTheme?.border }}>
+        <h4 className="text-sm font-semibold mb-2" style={{ color: currentTheme?.text }}>Extra Permissions</h4>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {EXTRA_PERMISSIONS.map(p => (
+            <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer py-1">
+              <input type="checkbox" checked={perms.includes(p.id)} onChange={() => !readOnly && togglePerm(p.id, perms, setPerms)} disabled={readOnly}
+                className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 disabled:cursor-default disabled:opacity-60" />
+              <span style={{ color: currentTheme?.text }}>{p.name}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600" /></div>;
 
   return (
-    <div className="p-6 min-h-screen">
-      {/* Header */}
+    <div className="p-6 min-h-screen" style={{ color: currentTheme?.text }}>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <Shield className="w-8 h-8 text-sky-600 dark:text-sky-400" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Roles & Permissions</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Manage user roles and their permissions</p>
+          <Shield className="w-8 h-8" style={{ color: currentTheme?.primary }} />
+          <div className="glass-text">
+            <h1 className="text-2xl font-bold" style={{ color: currentTheme?.text }}>Roles & Permissions</h1>
+            <p className="text-sm" style={{ color: currentTheme?.textMuted }}>Manage roles and page-level CRUD permissions</p>
           </div>
         </div>
-        {userIsRoot && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition"
-          >
-            <Plus className="w-5 h-5" />
-            Create Role
+        {userIsAdminOrHigher && (
+          <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 text-white rounded-lg" style={{ backgroundColor: currentTheme?.primary }}>
+            <Plus className="w-5 h-5" /> Create Role
           </button>
         )}
       </div>
 
-      {/* Message */}
       {message && (
-        <div className={`mb-4 p-3 rounded-lg flex items-center gap-2 ${
-          message.type === "success" 
-            ? "bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
-            : "bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
-        }`}>
+        <div className={`mb-4 p-3 rounded-lg flex items-center gap-2 ${message.type === "success" ? "bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300" : "bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"}`}>
           {message.type === "success" ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
           {message.text}
-          <button onClick={() => setMessage(null)} className="ml-auto">
-            <X className="w-4 h-4" />
-          </button>
+          <button onClick={() => setMessage(null)} className="ml-auto"><X className="w-4 h-4" /></button>
         </div>
       )}
 
-      {/* Roles Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {roles.map(role => (
-          <div
-            key={role.id}
-            className={`p-4 rounded-lg border cursor-pointer transition ${
-              selectedRole?.id === role.id
-                ? "border-sky-500 bg-sky-50 dark:bg-sky-900/20"
-                : "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f22] hover:border-sky-300 dark:hover:border-sky-700"
-            }`}
-            onClick={() => setSelectedRole(role)}
-          >
+        {visibleRoles.map(role => (
+          <div key={role.id} className={`p-4 rounded-xl border cursor-pointer transition-all ${selectedRole?.id === role.id ? "ring-2" : "hover:shadow-md"}`}
+            style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: selectedRole?.id === role.id ? currentTheme?.primary : currentTheme?.border }}
+            onClick={() => setSelectedRole(role)}>
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-                <h3 className="font-semibold text-gray-900 dark:text-white">{role.name}</h3>
-                {role.isSystem && (
-                  <span className="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded">
-                    System
-                  </span>
-                )}
+                <Users className="w-5 h-5" style={{ color: currentTheme?.primary }} />
+                <h3 className="font-semibold" style={{ color: currentTheme?.text }}>{role.name}</h3>
+                {role.isSystem && <span className="px-2 py-0.5 text-xs rounded" style={{ backgroundColor: `${currentTheme?.primary}18`, color: currentTheme?.primary }}>System</span>}
               </div>
               <div className="flex gap-1">
-                {role.id !== "root" && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleEditRole(role); }}
-                    className="p-1 text-gray-500 hover:text-sky-600 dark:hover:text-sky-400"
-                    title="Edit Permissions"
-                  >
-                    <Edit2 className="w-4 h-4" />
+                {role.id !== "root" && userIsAdminOrHigher && (
+                  <button onClick={e => { e.stopPropagation(); handleEditRole(role); }} className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/10" title="Edit Permissions">
+                    <Edit2 className="w-4 h-4" style={{ color: currentTheme?.textMuted }} />
                   </button>
                 )}
-                {role.canDelete && userIsRoot && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteRole(role.id); }}
-                    className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
-                    title="Delete Role"
-                  >
-                    <Trash2 className="w-4 h-4" />
+                {role.canDelete && userIsAdminOrHigher && (
+                  <button onClick={e => { e.stopPropagation(); handleDeleteRole(role.id); }} className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20" title="Delete Role">
+                    <Trash2 className="w-4 h-4 text-red-500" />
                   </button>
                 )}
               </div>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{role.description}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-              {role.permissions.length} permission{role.permissions.length !== 1 ? "s" : ""}
-            </p>
+            <p className="text-sm mt-1" style={{ color: currentTheme?.textMuted }}>{role.description}</p>
+            <p className="text-xs mt-2" style={{ color: currentTheme?.textMuted }}>{role.permissions.length} permission{role.permissions.length !== 1 ? "s" : ""}</p>
           </div>
         ))}
       </div>
 
-      {/* Selected Role Details */}
       {selectedRole && (
-        <div className="bg-white dark:bg-[#1e1f22] rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div className="rounded-xl border p-6 mb-6" style={{ backgroundColor: currentTheme?.surfaceAlt, borderColor: currentTheme?.border }}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              {selectedRole.name} - Permissions
-            </h2>
-            {selectedRole.id !== "root" && (
-              <button
-                onClick={() => handleEditRole(selectedRole)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 rounded-lg hover:bg-sky-200 dark:hover:bg-sky-900/50"
-              >
-                <Edit2 className="w-4 h-4" />
-                Edit Permissions
+            <h2 className="text-lg font-semibold" style={{ color: currentTheme?.text }}>{selectedRole.name} — Permissions</h2>
+            {selectedRole.id !== "root" && userIsAdminOrHigher && (
+              <button onClick={() => handleEditRole(selectedRole)} className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg" style={{ backgroundColor: `${currentTheme?.primary}18`, color: currentTheme?.primary }}>
+                <Edit2 className="w-4 h-4" /> Edit
               </button>
             )}
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries(groupedPermissions).map(([category, perms]) => (
-              <div key={category} className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2">{category}</h4>
-                <div className="space-y-1">
-                  {perms.map(perm => (
-                    <div key={perm.id} className="flex items-center gap-2 text-sm">
-                      {selectedRole.permissions.includes(perm.id) ? (
-                        <Check className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <X className="w-4 h-4 text-gray-300 dark:text-gray-600" />
-                      )}
-                      <span className={selectedRole.permissions.includes(perm.id) 
-                        ? "text-gray-900 dark:text-white" 
-                        : "text-gray-400 dark:text-gray-500"
-                      }>
-                        {perm.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <PermissionMatrix perms={selectedRole.permissions} setPerms={() => {}} readOnly />
         </div>
       )}
 
-      {/* Edit Permissions Modal */}
       {editingRole && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingRole(null)}>
-          <div className="bg-white dark:bg-[#1e1f22] rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Edit Permissions: {editingRole.name}
-              </h2>
-              <button onClick={() => setEditingRole(null)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-                <X className="w-5 h-5" />
-              </button>
+          <div className="bg-white dark:bg-[#1e1f22] rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: currentTheme?.border }}>
+              <h2 className="text-lg font-semibold" style={{ color: currentTheme?.text }}>Edit: {editingRole.name}</h2>
+              <button onClick={() => setEditingRole(null)}><X className="w-5 h-5" /></button>
             </div>
-            
-            <div className="p-4 overflow-y-auto max-h-[60vh]">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(groupedPermissions).map(([category, perms]) => (
-                  <div key={category} className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                    <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2">{category}</h4>
-                    <div className="space-y-2">
-                      {perms.map(perm => (
-                        <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={editingPerms.includes(perm.id)}
-                            onChange={() => togglePermission(perm.id, editingPerms, setEditingPerms)}
-                            className="w-4 h-4 text-sky-600 rounded focus:ring-sky-500"
-                          />
-                          <span className="text-sm text-gray-700 dark:text-gray-300">{perm.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-              <button
-                onClick={() => setEditingRole(null)}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSavePermissions}
-                className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg"
-              >
-                <Save className="w-4 h-4" />
-                Save Permissions
+            <div className="p-4 overflow-y-auto max-h-[65vh]"><PermissionMatrix perms={editingPerms} setPerms={setEditingPerms} /></div>
+            <div className="p-4 border-t flex justify-end gap-2" style={{ borderColor: currentTheme?.border }}>
+              <button onClick={() => setEditingRole(null)} className="px-4 py-2 rounded-lg" style={{ color: currentTheme?.text }}>Cancel</button>
+              <button onClick={handleSavePermissions} className="flex items-center gap-2 px-4 py-2 text-white rounded-lg" style={{ backgroundColor: currentTheme?.primary }}>
+                <Save className="w-4 h-4" /> Save
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Create Role Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white dark:bg-[#1e1f22] rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Role</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-                <X className="w-5 h-5" />
-              </button>
+          <div className="bg-white dark:bg-[#1e1f22] rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: currentTheme?.border }}>
+              <h2 className="text-lg font-semibold" style={{ color: currentTheme?.text }}>Create New Role</h2>
+              <button onClick={() => setShowCreateModal(false)}><X className="w-5 h-5" /></button>
             </div>
-            
-            <div className="p-4 overflow-y-auto max-h-[60vh]">
-              <div className="space-y-4 mb-4">
+            <div className="p-4 overflow-y-auto max-h-[65vh]">
+              <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role Name</label>
-                  <input
-                    type="text"
-                    value={newRoleName}
-                    onChange={e => setNewRoleName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-sky-500"
-                    placeholder="e.g., Accountant"
-                  />
+                  <label className="block text-sm font-medium mb-1" style={{ color: currentTheme?.text }}>Role Name</label>
+                  <input type="text" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" style={{ backgroundColor: currentTheme?.surface, borderColor: currentTheme?.border, color: currentTheme?.text }} placeholder="e.g., Accountant" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={newRoleDesc}
-                    onChange={e => setNewRoleDesc(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-sky-500"
-                    placeholder="e.g., Access to financial reports"
-                  />
+                  <label className="block text-sm font-medium mb-1" style={{ color: currentTheme?.text }}>Description</label>
+                  <input type="text" value={newRoleDesc} onChange={e => setNewRoleDesc(e.target.value)} className="w-full px-3 py-2 border rounded-lg" style={{ backgroundColor: currentTheme?.surface, borderColor: currentTheme?.border, color: currentTheme?.text }} placeholder="e.g., Financial reports access" />
                 </div>
               </div>
-
-              <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2">Permissions</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(groupedPermissions).map(([category, perms]) => (
-                  <div key={category} className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                    <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2">{category}</h4>
-                    <div className="space-y-2">
-                      {perms.map(perm => (
-                        <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={newRolePerms.includes(perm.id)}
-                            onChange={() => togglePermission(perm.id, newRolePerms, setNewRolePerms)}
-                            className="w-4 h-4 text-sky-600 rounded focus:ring-sky-500"
-                          />
-                          <span className="text-sm text-gray-700 dark:text-gray-300">{perm.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <h4 className="font-semibold mb-2" style={{ color: currentTheme?.text }}>Permissions</h4>
+              <PermissionMatrix perms={newRolePerms} setPerms={setNewRolePerms} />
             </div>
-            
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateRole}
-                className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg"
-              >
-                <Plus className="w-4 h-4" />
-                Create Role
+            <div className="p-4 border-t flex justify-end gap-2" style={{ borderColor: currentTheme?.border }}>
+              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 rounded-lg" style={{ color: currentTheme?.text }}>Cancel</button>
+              <button onClick={handleCreateRole} className="flex items-center gap-2 px-4 py-2 text-white rounded-lg" style={{ backgroundColor: currentTheme?.primary }}>
+                <Plus className="w-4 h-4" /> Create Role
               </button>
             </div>
           </div>

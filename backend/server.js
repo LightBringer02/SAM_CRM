@@ -9,6 +9,7 @@ const systemConfigRoutes = require('./routes/systemConfig');
 const syncRoutes = require('./routes/sync');
 const blacklistRoutes = require('./routes/blacklist');
 const permissionsRoutes = require('./routes/permissions');
+const tallyRoutes = require('./routes/tally');
 const { extractUser, checkServiceEnabled } = require('./middleware/authMiddleware');
 const { applySecurityMiddleware } = require('./middleware/securityMiddleware');
 
@@ -123,6 +124,8 @@ app.use('/api/ledgers', ledgersRoutes);
 app.use('/api/blacklist', blacklistRoutes);
 // Permissions API (RBAC)
 app.use('/api/permissions', permissionsRoutes);
+// Tally API (create vouchers, etc.)
+app.use('/api/tally', tallyRoutes);
 
 // ========================================
 // HEALTH & STATUS ENDPOINTS

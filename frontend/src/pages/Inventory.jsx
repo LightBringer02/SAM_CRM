@@ -23,21 +23,140 @@ export default function Inventory() {
   const [maxQty, setMaxQty] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [fromCache, setFromCache] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
+    let hasCachedData = false;
+    
+    // Load cached data from localStorage immediately
+    try {
+      const cached = localStorage.getItem('crm_inventory_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setData(parsed);
+          setFromCache(true);
+          setLoading(false);
+          hasCachedData = true;
+        }
+      }
+    } catch {}
+    
+    // Fetch from API in background
     setError("");
     axios.get("/api/inventory")
       .then(res => {
-        setData(res.data.data || []);
-        console.log("Fetched inventory data:", res.data.data);
+        const apiData = res.data?.data || res.data || [];
+        const items = Array.isArray(apiData) ? apiData : [];
+        if (items.length > 0) {
+          setData(items);
+          setFromCache(false);
+          // Cache to localStorage for offline use
+          try { localStorage.setItem('crm_inventory_cache', JSON.stringify(items)); } catch {}
+          // Track quantity changes for purchase decision
+          trackQuantityChanges(items);
+        }
       })
       .catch(err => {
-        setError("Failed to fetch inventory");
+        if (!hasCachedData) {
+          setError("Failed to fetch inventory. " + (err?.response?.data?.error || err.message));
+        }
         console.error("Inventory API error:", err);
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // ── Track last 5 quantity changes per item ──
+  function trackQuantityChanges(newItems) {
+    try {
+      const QTY_HISTORY_KEY = 'crm_inventory_qty_history';
+      const history = JSON.parse(localStorage.getItem(QTY_HISTORY_KEY) || '{}');
+      const now = new Date().toISOString();
+      let lowStockItems = [];
+
+      newItems.forEach(item => {
+        if (!item.name) return;
+        // Skip services
+        if ((item.group || '').toLowerCase() === 'services') return;
+
+        const currentQty = Number(item.quantity) || 0;
+        const key = item.name;
+        
+        if (!history[key]) {
+          history[key] = [];
+        }
+        
+        const records = history[key];
+        const lastRecord = records.length > 0 ? records[records.length - 1] : null;
+        
+        // Only log if quantity actually changed or first entry
+        if (!lastRecord || lastRecord.qty !== currentQty) {
+          const diff = lastRecord ? currentQty - lastRecord.qty : 0;
+          records.push({ qty: currentQty, date: now, diff });
+          
+          // Keep only last 5 entries
+          if (records.length > 5) {
+            history[key] = records.slice(-5);
+          }
+        }
+        
+        // Analyze trend: if qty is decreasing over last 3+ records, and current qty is low
+        const recs = history[key];
+        if (recs.length >= 3) {
+          const recentDiffs = recs.slice(-3).map(r => r.diff).filter(d => d !== 0);
+          const avgDrop = recentDiffs.length > 0 
+            ? recentDiffs.reduce((s, d) => s + d, 0) / recentDiffs.length 
+            : 0;
+          
+          // Find the minimum qty historically
+          const allQtys = recs.map(r => r.qty);
+          const minQty = Math.min(...allQtys);
+          const maxQty = Math.max(...allQtys);
+          
+          // Item needs purchase if: qty is trending down and current qty is within 20% of historical min
+          // OR qty dropped by more than 50% from max
+          const isLow = (maxQty > 0 && currentQty <= maxQty * 0.3) || 
+                        (currentQty <= minQty * 1.2 && avgDrop < 0) ||
+                        (currentQty <= 5 && avgDrop < 0);
+          
+          if (isLow && currentQty >= 0) {
+            lowStockItems.push({
+              name: item.name,
+              group: item.group || '',
+              currentQty,
+              minQty,
+              maxQty,
+              avgDrop: Math.abs(avgDrop).toFixed(1),
+              unit: item.unit || 'Nos'
+            });
+          }
+        }
+      });
+
+      localStorage.setItem(QTY_HISTORY_KEY, JSON.stringify(history));
+
+      // Save low stock items for Dashboard to read
+      if (lowStockItems.length > 0) {
+        localStorage.setItem('crm_low_stock_items', JSON.stringify(lowStockItems));
+        
+        // Send bell notification (only once per session to avoid spam)
+        const notifKey = 'crm_low_stock_notified_' + new Date().toDateString();
+        if (!sessionStorage.getItem(notifKey)) {
+          sessionStorage.setItem(notifKey, '1');
+          if (window.addCRMNotification) {
+            window.addCRMNotification({
+              type: 'warning',
+              title: 'Low Stock Alert',
+              message: `${lowStockItems.length} item${lowStockItems.length > 1 ? 's' : ''} need${lowStockItems.length === 1 ? 's' : ''} to be purchased soon: ${lowStockItems.slice(0, 3).map(i => i.name).join(', ')}${lowStockItems.length > 3 ? '...' : ''}`,
+              page: 'inventory'
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to track quantity changes:', err);
+    }
+  }
 
   const filtered = data.filter(item => {
     // Hide rows where group is SERVICES (case-insensitive)
@@ -258,7 +377,7 @@ export default function Inventory() {
 
   return (
     <div className="min-h-screen">
-      <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Inventory</h1>
+      <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white glass-text">Inventory</h1>
       <div className="flex flex-wrap gap-4 mb-4">
         <input
           className="px-3 py-2 border rounded w-full max-w-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
@@ -301,7 +420,7 @@ export default function Inventory() {
             {/* Add by CSV Modal */}
       {showCSV && (
         <div className="fixed inset-0 flex items-center justify-center z-50 transition-all" style={{ background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)' }}>
-          <div className="bg-white bg-opacity-100 p-8 rounded shadow-lg min-w-[400px] max-w-[90vw]">
+          <div className="bg-white bg-opacity-100 p-4 md:p-8 rounded shadow-lg w-full max-w-[90vw] md:min-w-[400px]">
                   <h2 className="text-lg font-bold mb-4">Add Inventory by CSV</h2>
                   <div className="mb-4">
                     <div className="font-semibold mb-2">CSV Format:</div>
@@ -403,7 +522,7 @@ export default function Inventory() {
       {/* Create Item Modal */}
       {showCreate && (
         <div className="fixed inset-0 flex items-center justify-center z-50 transition-all" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}>
-          <form className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl min-w-[650px] max-w-[90vw] max-h-[90vh] overflow-y-auto border dark:border-gray-700" onSubmit={handleCreateSubmit}>
+          <form className="bg-white dark:bg-gray-800 p-4 md:p-8 rounded-xl shadow-xl w-full max-w-[90vw] md:min-w-[650px] max-h-[90vh] overflow-y-auto border dark:border-gray-700" onSubmit={handleCreateSubmit}>
             <h2 className="text-lg font-bold mb-4 text-gray-900 dark:text-white">Create Inventory Item</h2>
             
             {/* Mode Toggle */}
@@ -452,7 +571,7 @@ export default function Inventory() {
               )}
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="mb-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name *</label>
                 <input name="name" value={newItem.name} onChange={handleCreateChange} className="w-full border dark:border-gray-600 px-2 py-1 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" required />

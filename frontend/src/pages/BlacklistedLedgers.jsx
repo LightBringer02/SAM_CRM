@@ -173,7 +173,7 @@ export default function BlacklistedLedgers() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div className="flex-1">
+        <div className="flex-1 glass-text">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
             <ShieldAlert className="w-7 h-7 text-red-600" />
             Blacklisted Ledgers
@@ -233,6 +233,7 @@ export default function BlacklistedLedgers() {
             </p>
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
@@ -279,6 +280,7 @@ export default function BlacklistedLedgers() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

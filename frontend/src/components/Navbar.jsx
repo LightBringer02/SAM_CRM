@@ -1,15 +1,16 @@
 
 import { useLocation, Link } from "react-router-dom";
-import { ListTodo, NotepadText, RefreshCw, Wifi, WifiOff, Sun, Moon, Clock, Calendar } from "lucide-react";
+import { ListTodo, NotepadText, RefreshCw, Wifi, WifiOff, Sun, Moon, Clock, Calendar, Menu, Bell } from "lucide-react";
 import { useAuth } from "../auth";
 import { useTheme } from "../theme";
 import { useEffect, useState, useRef, useCallback } from "react";
 import CalendarDropdown from "./CalendarDropdown";
+import NotificationPane from "./NotificationPane";
 
 // Use environment variable for API URL, fallback to localhost
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-export default function Navbar() {
+export default function Navbar({ onToggleMobileMenu, mobileMenuOpen }) {
   // Memoize the clockRef so it is stable and not recreated on every render
   const clockRef = useRef(null);
   const location = useLocation();
@@ -32,7 +33,6 @@ export default function Navbar() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   // Stable close handler prevents child re-render causing dropdown blink
   const closeCalendar = useCallback(() => setCalendarOpen(false), [setCalendarOpen]);
-  useEffect(() => { if (process.env.NODE_ENV === 'development') console.log('calendarOpen changed ->', calendarOpen); }, [calendarOpen]);
 
   // Check Tally connection status
   const checkTallyStatus = async () => {
@@ -180,7 +180,7 @@ export default function Navbar() {
       <div className="relative" ref={anchorRef}>
         <button
           className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-700 hover:from-blue-100 hover:to-purple-100 dark:hover:from-gray-700 dark:hover:to-gray-600 border border-blue-200 dark:border-gray-600 shadow-sm transition cursor-pointer"
-          onClick={() => { if (process.env.NODE_ENV === 'development') console.log('clock clicked, open=', open); setOpen(!open); }}
+          onClick={() => { setOpen(!open); }}
           title="Open Calendar & Reminders"
         >
           <Clock className="w-4 h-4 text-blue-500 dark:text-blue-400" />
@@ -194,7 +194,7 @@ export default function Navbar() {
 
   return (
     <div 
-      className="h-14 flex items-center justify-between px-6 transition-all duration-300 backdrop-blur-xl" 
+      className="h-14 flex items-center justify-between px-3 md:px-6 transition-all duration-300 backdrop-blur-xl" 
       style={{
         minHeight: 56, 
         height: 56, 
@@ -206,14 +206,28 @@ export default function Navbar() {
         borderBottom: `1px solid ${currentTheme?.border || (dark ? 'rgba(45, 45, 90, 0.5)' : 'rgba(226, 232, 240, 0.5)')}`
       }}
     >
-      <h2 className="text-lg font-semibold" style={{ color: currentTheme?.text }}>
-        {pageTitle}
-      </h2>
+      {/* Left: hamburger (mobile) + page title */}
+      <div className="flex items-center gap-2 min-w-0">
+        {/* Hamburger menu - mobile only */}
+        <button
+          onClick={onToggleMobileMenu}
+          className="md:hidden p-2 rounded-lg transition-colors hover:opacity-80"
+          style={{ color: currentTheme?.text }}
+          aria-label="Toggle menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <h2 className="text-base md:text-lg font-semibold truncate" style={{ color: currentTheme?.text }}>
+          {pageTitle}
+        </h2>
+      </div>
 
-      <div className="flex items-center gap-4">
+      {/* Right: controls */}
+      <div className="flex items-center gap-2 md:gap-4 shrink-0">
+        {/* Todos link - hidden on mobile */}
         <Link
           to="/todos"
-          className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors"
+          className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-lg transition-colors"
           style={{ color: currentTheme?.text }}
           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = currentTheme?.surfaceAlt || (dark ? '#1a1a3a' : '#f8fafc')}
           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -222,9 +236,10 @@ export default function Navbar() {
           <span>Todos</span>
         </Link>
 
+        {/* Logs link - hidden on mobile */}
         <Link
           to="/logs"
-          className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors"
+          className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-lg transition-colors"
           style={{ color: currentTheme?.text }}
           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = currentTheme?.surfaceAlt || (dark ? '#1a1a3a' : '#f8fafc')}
           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -234,9 +249,9 @@ export default function Navbar() {
         </Link>
 
         {/* TALLY STATUS & SYNC */}
-        <div className="flex items-center gap-3">
-          {/* Tally Status Indicator */}
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
+        <div className="flex items-center gap-1 md:gap-3">
+          {/* Tally Status Indicator - compact on mobile */}
+          <div className={`flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-full text-xs md:text-sm font-medium ${
             tallyStatus === "live" 
               ? "bg-green-100 text-green-700 border border-green-300" 
               : tallyStatus === "offline"
@@ -246,37 +261,37 @@ export default function Navbar() {
             {tallyStatus === "live" ? (
               <>
                 <Wifi className="w-4 h-4" />
-                <span>Tally Live</span>
+                <span className="hidden md:inline">Tally Live</span>
               </>
             ) : tallyStatus === "offline" ? (
               <>
                 <WifiOff className="w-4 h-4" />
-                <span>Tally Offline</span>
+                <span className="hidden md:inline">Tally Offline</span>
               </>
             ) : (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Checking...</span>
+                <span className="hidden md:inline">Checking...</span>
               </>
             )}
           </div>
 
-          {/* Last Sync Time */}
-          <span className="text-xs text-blue-700 dark:text-blue-300">
+          {/* Last Sync Time - hidden on mobile */}
+          <span className="hidden lg:inline text-xs text-blue-700 dark:text-blue-300">
             {lastSync ? `Synced: ${new Date(lastSync).toLocaleTimeString()}` : "Not synced"}
           </span>
 
-          {/* Sync Message */}
+          {/* Sync Message - hidden on mobile */}
           {syncMessage && (
-            <span className={`text-xs ${syncStatus === "success" ? "text-green-600" : "text-red-600"}`}>
+            <span className={`hidden md:inline text-xs ${syncStatus === "success" ? "text-green-600" : "text-red-600"}`}>
               {syncMessage}
             </span>
           )}
 
-          {/* Auto-Sync Toggle */}
+          {/* Auto-Sync Toggle - hidden on mobile */}
           <button
             onClick={toggleAutoSync}
-            className={`px-2 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-colors ${
+            className={`hidden lg:flex px-2 py-1.5 rounded-lg items-center gap-1.5 text-xs font-medium transition-colors ${
               autoSyncEnabled
                 ? "bg-green-100 text-green-700 border border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700"
                 : "bg-gray-100 text-gray-600 border border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600"
@@ -294,7 +309,7 @@ export default function Navbar() {
           {/* Sync Button */}
           <button
             onClick={() => triggerSync(false)}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors ${
+            className={`px-2 md:px-3 py-1.5 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm font-medium transition-colors ${
               syncStatus === "syncing"
                 ? "bg-blue-100 text-blue-600 cursor-wait"
                 : "bg-blue-500 hover:bg-blue-600 text-white"
@@ -303,14 +318,14 @@ export default function Navbar() {
             disabled={syncStatus === "syncing"}
           >
             <RefreshCw className={`w-4 h-4 ${syncStatus === "syncing" ? "animate-spin" : ""}`} />
-            {syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
+            <span className="hidden md:inline">{syncStatus === "syncing" ? "Syncing..." : "Sync Now"}</span>
           </button>
         </div>
 
-        {/* Dark/Light Mode Toggle with Sun/Moon Animation */}
+        {/* Dark/Light Mode Toggle */}
         <button
           onClick={() => setDark(!dark)}
-          className="relative w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center transition-all duration-500 hover:scale-110 shadow-md hover:shadow-lg border border-blue-200 dark:border-gray-600"
+          className="relative w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center transition-all duration-500 hover:scale-110 shadow-md hover:shadow-lg border border-blue-200 dark:border-gray-600"
           title={dark ? "Switch to Light Mode" : "Switch to Dark Mode"}
           aria-label="Toggle dark mode"
         >
@@ -332,8 +347,15 @@ export default function Navbar() {
           />
         </button>
 
-        {/* Clock/Date with Calendar Dropdown */}
-        <NavbarClock open={calendarOpen} setOpen={setCalendarOpen} anchorRef={clockRef} />
+        {/* Notification Bell - mobile only (replaces RightPane) */}
+        <div className="md:hidden">
+          <NotificationPane />
+        </div>
+
+        {/* Clock/Date with Calendar Dropdown - hidden on mobile */}
+        <div className="hidden md:block">
+          <NavbarClock open={calendarOpen} setOpen={setCalendarOpen} anchorRef={clockRef} />
+        </div>
         {/* Render CalendarDropdown at Navbar level to avoid re-renders from the ticking clock */}
         <CalendarDropdown open={calendarOpen} onClose={closeCalendar} anchorRef={clockRef} />
       </div>

@@ -438,6 +438,23 @@ const LEDGER_CARDS = [
 ];
 
 // Determine the balance side (Dr/Cr) using available metadata
+// Helper to determine if ledger group is Asset type (Dr positive) or Liability type (Cr positive)
+function isAssetGroupType(groupKey, ledger) {
+  const gk = (groupKey || '').toLowerCase();
+  const parentGroup = (ledger?.parent || '').toLowerCase();
+  
+  // Asset types: Sundry Debtors, Cash, Bank accounts - positive balance = Dr
+  const assetGroups = ['sundry-debtors', 'cash', 'bank', 'bank-occ', 'bank-od'];
+  const assetParents = ['debtor', 'cash', 'bank'];
+  
+  if (assetGroups.includes(gk)) return true;
+  if (assetParents.some(p => parentGroup.includes(p))) return true;
+  
+  // Liability types: Sundry Creditors - positive balance = Cr
+  // Default to liability behavior if unknown
+  return false;
+}
+
 function resolveBalanceSide(rawAmount, options = {}) {
   if (options.side) return options.side;
 
@@ -465,7 +482,15 @@ function resolveBalanceSide(rawAmount, options = {}) {
 
   const numericRaw = parseFloat(rawAmount);
   if (!Number.isNaN(numericRaw) && numericRaw !== 0) {
-    return numericRaw > 0 ? 'Cr' : 'Dr';
+    // Use groupKey to determine if asset or liability type
+    const isAsset = isAssetGroupType(options.groupKey, options.ledger);
+    if (isAsset) {
+      // Assets: positive = Dr (debit balance), negative = Cr
+      return numericRaw > 0 ? 'Dr' : 'Cr';
+    } else {
+      // Liabilities: positive = Cr (credit balance), negative = Dr
+      return numericRaw > 0 ? 'Cr' : 'Dr';
+    }
   }
 
   return options.defaultSide || 'Dr';
@@ -674,7 +699,7 @@ function LedgerSummaryCards() {
       {message && <div className={`p-3 rounded-lg flex items-center gap-2 ${message.type === "error" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{message.type === "error" ? <AlertCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}{message.text}</div>}
       
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ledgers</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white glass-text">Ledgers</h1>
         <div className="flex gap-2">
           <button 
             onClick={() => setShowCreateModal(true)}
@@ -741,8 +766,8 @@ function LedgerSummaryCards() {
           const isDebtors = card.key === 'sundry-debtors';
           const isCreditors = card.key === 'sundry-creditors';
           // Show absolute closing balance as "Total Receivable" for debtors, "Total Payable" for creditors
-          // Divide by 100 to convert from paise to rupees
-          const totalBalance = Math.abs((data.closingBalance || 0) / 100);
+          // Multiply by 100 to match Tally display format
+          const totalBalance = Math.abs((data.closingBalance || 0));
           const balanceLabel = isDebtors ? 'Total Receivable' : isCreditors ? 'Total Payable' : 'Balance';
 
           // Use the count directly from backend (already deduplicated)
@@ -808,7 +833,13 @@ function LedgerSummaryCards() {
       {selectedLedger && (
         <LedgerDetailModal 
           ledger={selectedLedger} 
-          onClose={() => setSelectedLedger(null)} 
+          onClose={() => setSelectedLedger(null)}
+          groupKey={
+            (selectedLedger.parent || '').toLowerCase().includes('debtor') ? 'sundry-debtors' :
+            (selectedLedger.parent || '').toLowerCase().includes('creditor') ? 'sundry-creditors' :
+            (selectedLedger.parent || '').toLowerCase().includes('bank') ? 'bank' :
+            (selectedLedger.parent || '').toLowerCase().includes('cash') ? 'cash' : ''
+          }
         />
       )}
 
@@ -1082,19 +1113,19 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
   const rawClosingBalance = parseFloat(ledger?.closing_balance ?? ledger?.closingBalance ?? 0);
 
   const openingSummary = formatLedgerBalance(rawOpeningBalance, {
-    divideBy: 100,
     showDrCr: true,
-    defaultSide: rawOpeningBalance >= 0 ? 'Cr' : 'Dr'
+    groupKey,
+    ledger
   });
   const closingSummary = formatLedgerBalance(rawClosingBalance, {
-    divideBy: 100,
     showDrCr: true,
+    groupKey,
     ledger
   });
   const netMovementMeta = formatLedgerBalance(rawClosingBalance - rawOpeningBalance, {
-    divideBy: 100,
     showDrCr: true,
-    defaultSide: rawClosingBalance - rawOpeningBalance >= 0 ? 'Cr' : 'Dr'
+    groupKey,
+    ledger
   });
 
   const ledgerGstin = (ledger?.gstin || ledger?.gst_number || ledger?.gstNo || ledger?.party_gstin || ledger?.GSTIN || '').toString().toUpperCase();
@@ -1289,32 +1320,57 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
   // For Creditors: Purchase = Credit, Payment = Debit
   // Debit Note = Debit (increases receivable), Credit Note = Credit (decreases receivable)
   // Journal entries need to be analyzed per ledger entry for proper Dr/Cr
-  // Contra entries typically don't affect party ledgers
+  // Contra entries also analyzed per ledger entry
   // Use totalAmount (with GST) if available, otherwise fall back to amount
   const getVoucherAmount = (v) => {
     // Priority: totalAmount > ledger_total > grand_total > amount
     return parseFloat(v.totalAmount) || parseFloat(v.ledger_total) || parseFloat(v.grand_total) || parseFloat(v.amount) || 0;
   };
 
-  const debitTotal = filteredVouchers
-    .filter(v => {
-      const type = (v.voucher_type || '').toLowerCase().replace(/_/g, ' ');
-      // Sales, Payment, Debit Note, Stock Journal are debits
-      return type === 'sales' || type === 'payment' || 
-             type === 'debit note' || type === 'debitnote' ||
-             type === 'stock journal' || type.includes('debit');
-    })
-    .reduce((sum, v) => sum + getVoucherAmount(v), 0);
+  // Get ledger-specific amount and debit/credit direction for journal/contra
+  const getLedgerEntryInfo = (v) => {
+    const ledgerEntries = v.ledger_entries || v.ledgers || [];
+    const ledgerNameLower = ledger.name.toLowerCase();
+    const entry = ledgerEntries.find(le => 
+      (le.name || le.ledger_name || '').toLowerCase() === ledgerNameLower
+    );
+    if (entry) {
+      const amount = Math.abs(parseFloat(entry.amount) || 0);
+      const isDebit = entry.is_debit === true || entry.is_debit === 'true' || 
+                      (parseFloat(entry.amount) || 0) < 0; // In Tally, negative amounts are often debits
+      return { amount, isDebit };
+    }
+    return null;
+  };
+
+  // Classify each voucher as debit or credit with proper amount
+  const classifiedVouchers = filteredVouchers.map(v => {
+    const type = (v.voucher_type || '').toLowerCase().replace(/_/g, ' ');
+    
+    // For journal and contra, check ledger entries
+    if (type === 'journal' || type === 'contra') {
+      const entryInfo = getLedgerEntryInfo(v);
+      if (entryInfo) {
+        return { ...v, _isDebit: entryInfo.isDebit, _ledgerAmount: entryInfo.amount };
+      }
+      // Fallback: show as credit (since image shows journal as credit)
+      return { ...v, _isDebit: false, _ledgerAmount: getVoucherAmount(v) };
+    }
+    
+    // Standard classification
+    const isDebit = type === 'sales' || type === 'payment' || 
+                    type === 'debit note' || type === 'debitnote' ||
+                    type === 'stock journal' || type.includes('debit');
+    return { ...v, _isDebit: isDebit, _ledgerAmount: getVoucherAmount(v) };
+  });
+
+  const debitTotal = classifiedVouchers
+    .filter(v => v._isDebit)
+    .reduce((sum, v) => sum + (v._ledgerAmount || 0), 0);
   
-  const creditTotal = filteredVouchers
-    .filter(v => {
-      const type = (v.voucher_type || '').toLowerCase().replace(/_/g, ' ');
-      // Purchase, Receipt, Credit Note are credits
-      return type === 'purchase' || type === 'receipt' || 
-             type === 'credit note' || type === 'creditnote' ||
-             type.includes('credit');
-    })
-    .reduce((sum, v) => sum + getVoucherAmount(v), 0);
+  const creditTotal = classifiedVouchers
+    .filter(v => !v._isDebit)
+    .reduce((sum, v) => sum + (v._ledgerAmount || 0), 0);
 
   return (
     <div 
@@ -1436,7 +1492,7 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
               )}
 
               {gstInfoFields.length > 0 && (
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                   {gstInfoFields.map(field => (
                     <div key={field.label}>
                       <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{field.label}</p>
@@ -1447,7 +1503,7 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
               )}
 
               {/* Balance Summary - Like Tally's Opening/Current/Closing */}
-              <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <p className="text-sm text-blue-700 dark:text-blue-400">Opening Balance</p>
                   <p className={`text-xl font-bold ${balanceColorClass(openingSummary.side)}`}>
@@ -1519,7 +1575,7 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
                   No vouchers found {filterPeriod !== 'all' ? 'for this period' : 'for this ledger'}
                 </div>
               ) : (
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-gray-50 dark:bg-gray-700/50">
@@ -1531,12 +1587,10 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {filteredVouchers.map((v, idx) => {
-                        // Correct debit/credit: Sales, Payment, Debit Note = Debit; Purchase, Receipt, Credit Note = Credit
-                        const voucherType = (v.voucher_type || '').toLowerCase().replace(/_/g, ' ');
-                        const isDebit = voucherType === 'sales' || voucherType === 'payment' || 
-                                        voucherType === 'debit note' || voucherType === 'debitnote' ||
-                                        voucherType === 'stock journal';
+                      {classifiedVouchers.map((v, idx) => {
+                        // Use pre-classified debit/credit
+                        const isDebit = v._isDebit;
+                        const displayAmount = v._ledgerAmount || getVoucherAmount(v);
                         
                         // Get voucher type color
                         const getTypeColor = (type) => {
@@ -1580,10 +1634,10 @@ function LedgerDetailModal({ ledger, onClose, groupKey }) {
                             </td>
                             <td className="px-3 py-2 text-gray-900 dark:text-white">{v.voucher_number || '-'}</td>
                             <td className="px-3 py-2 text-right text-green-600 dark:text-green-400">
-                              {isDebit ? formatCurrency(getVoucherAmount(v)) : '-'}
+                              {isDebit ? formatCurrency(displayAmount) : '-'}
                             </td>
                             <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">
-                              {!isDebit ? formatCurrency(getVoucherAmount(v)) : '-'}
+                              {!isDebit ? formatCurrency(displayAmount) : '-'}
                             </td>
                           </tr>
                         );
@@ -1716,7 +1770,7 @@ function LedgerListView({ groupKey }) {
       )}
 
       {/* Ledgers Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
@@ -1742,15 +1796,14 @@ function LedgerListView({ groupKey }) {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {ledgers.map((ledger, idx) => {
                 const openingMeta = formatLedgerBalance(ledger.opening_balance, {
-                  divideBy: 100,
                   showDrCr: true,
                   ledger,
-                  defaultSide: 'Dr'
+                  groupKey
                 });
                 const closingMeta = formatLedgerBalance(ledger.closing_balance, {
-                  divideBy: 100,
                   showDrCr: true,
-                  ledger
+                  ledger,
+                  groupKey
                 });
                 return (
                   <tr

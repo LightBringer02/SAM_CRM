@@ -5,11 +5,13 @@ import MainLayout from "../layouts/MainLayout";
 // Pages
 import Dashboard from "../pages/Dashboard";
 import Inventory from "../pages/Inventory";
+import RateList from "../pages/RateList";
 import Vouchers from "../pages/Vouchers";
 import Ledgers from "../pages/Ledgers";
 import BlacklistedLedgers from "../pages/BlacklistedLedgers";
 import Communication from "../pages/Communication";
 import Orders from "../pages/Orders";
+import Delivery from "../pages/Delivery";
 import Users from "../pages/Users";
 import Employees from "../pages/Employees.jsx";
 import EmployeeAttendance from "../pages/EmployeeAttendance";
@@ -27,6 +29,7 @@ import QueueManagement from "../pages/QueueManagement";
 import BackupManagement from "../pages/BackupManagement";
 import ApiConfiguration from "../pages/ApiConfiguration";
 import Roles from "../pages/Roles";
+import Features from "../pages/Features";
 
 // Protected Route Wrapper
 function ProtectedLayout({ children }) {
@@ -111,6 +114,14 @@ export default function AppRouter() {
           }
         />
         <Route
+          path="/delivery"
+          element={
+            <ProtectedLayout>
+              <Delivery />
+            </ProtectedLayout>
+          }
+        />
+        <Route
           path="/ledgers"
           element={
             <ProtectedLayout>
@@ -147,6 +158,14 @@ export default function AppRouter() {
           element={
             <ProtectedLayout>
               <Inventory />
+            </ProtectedLayout>
+          }
+        />
+        <Route
+          path="/rate-list"
+          element={
+            <ProtectedLayout>
+              <RateList />
             </ProtectedLayout>
           }
         />
@@ -272,6 +291,15 @@ export default function AppRouter() {
           element={
             <ProtectedLayout>
               <Roles />
+            </ProtectedLayout>
+          }
+        />
+        {/* ROOT-only Feature Management Route */}
+        <Route
+          path="/features"
+          element={
+            <ProtectedLayout>
+              <Features />
             </ProtectedLayout>
           }
         />

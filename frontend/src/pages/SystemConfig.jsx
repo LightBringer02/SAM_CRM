@@ -149,7 +149,6 @@ export default function SystemConfig() {
             });
           } catch (reloadErr) {
             // Silently ignore reload errors - config is already saved
-            console.log("Database pool reload skipped:", reloadErr.message);
           }
         }
       }
@@ -313,7 +312,7 @@ export default function SystemConfig() {
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <Shield className="w-8 h-8 text-purple-600" />
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white glass-text">
             System Configuration
           </h1>
         </div>
